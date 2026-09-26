@@ -1,112 +1,105 @@
 package com.beian.tracker.ui
 
 import android.graphics.Color
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
+import android.graphics.drawable.Drawable
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import com.beian.tracker.R
-import com.amap.api.maps2d.AMap
-import com.amap.api.maps2d.CameraUpdateFactory
-import com.amap.api.maps2d.MapView
-import com.amap.api.maps2d.model.LatLng
-import com.amap.api.maps2d.model.LatLngBounds
-import com.amap.api.maps2d.model.PolylineOptions
 import com.beian.tracker.data.TrackPoint
+import org.osmdroid.config.Configuration
+import org.osmdroid.tileprovider.tilesource.TileSourceFactory
+import org.osmdroid.util.BoundingBox
+import org.osmdroid.util.GeoPoint
+import org.osmdroid.views.MapView
+import org.osmdroid.views.overlay.Marker
+import org.osmdroid.views.overlay.Polyline
 
 /**
- * 高德 2D 地图，绘制轨迹线。
- * 未配置 Key 时降级为提示文案（不崩溃）。
+ * 基于 osmdroid 的地图，绘制轨迹线。无需 API Key，瓦片按需在线加载，
+ * 数据本身始终保存在本机。
  */
 @Composable
 fun TrackMapView(
     points: List<TrackPoint>,
-    amapKey: String,
+    startLabel: String,
+    endLabel: String,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
-
-    if (amapKey.isBlank()) {
-        Box(
-            modifier = modifier
-                .background(MaterialTheme.colorScheme.surfaceVariant)
-                .padding(24.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = stringResource(R.string.map_not_configured),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-            )
-        }
-        return
-    }
-
-    val startLabel = stringResource(R.string.map_start)
-    val endLabel = stringResource(R.string.map_end)
+    val appContext = context.applicationContext
 
     val mapView = remember {
-        MapView(context).apply {
-            onCreate(null)
+        Configuration.getInstance().userAgentValue = appContext.packageName
+        MapView(appContext).apply {
+            setTileSource(TileSourceFactory.MAPNIK)
+            setMultiTouchControls(true)
+            controller.setZoom(15.0)
         }
     }
 
     DisposableEffect(Unit) {
-        onDispose {
-            mapView.onDestroy()
-        }
+        onResume(mapView)
+        onDispose { mapView.onPause() }
     }
 
     AndroidView(
-        modifier = modifier,
+        modifier = modifier.fillMaxSize(),
         factory = { mapView },
-        update = { view ->
-            drawTrack(view.map, points, startLabel, endLabel)
-        },
+        update = { view -> drawTrack(view, points, startLabel, endLabel) },
     )
 }
 
-private fun drawTrack(map: AMap, points: List<TrackPoint>, startLabel: String, endLabel: String) {
-    map.clear()
-    if (points.isEmpty()) return
+private fun drawTrack(
+    map: MapView,
+    points: List<TrackPoint>,
+    startLabel: String,
+    endLabel: String,
+) {
+    val overlays = map.overlays
+    overlays.clear()
 
-    val latLngs = points.map { LatLng(it.latitude, it.longitude) }
-
-    if (latLngs.size >= 2) {
-        map.addPolyline(
-            PolylineOptions()
-                .addAll(latLngs)
-                .width(12f)
-                .color(Color.parseColor("#FF4A6FA5")),
-        )
+    if (points.isEmpty()) {
+        map.invalidate()
+        return
     }
 
-    // 起终点标记
-    map.addMarker(
-        com.amap.api.maps2d.model.MarkerOptions()
-            .position(latLngs.first())
-            .title(startLabel),
+    val geoPoints = points.map { GeoPoint(it.latitude, it.longitude) }
+
+    if (geoPoints.size >= 2) {
+        val line = Polyline().apply {
+            setPoints(geoPoints)
+            outlinePaint.color = Color.parseColor("#FF4A6FA5")
+            outlinePaint.strokeWidth = 8f
+        }
+        overlays.add(line)
+    }
+
+    overlays.add(
+        Marker(map).apply {
+            position = geoPoints.first()
+            title = startLabel
+            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+        },
     )
-    map.addMarker(
-        com.amap.api.maps2d.model.MarkerOptions()
-            .position(latLngs.last())
-            .title(endLabel),
+    overlays.add(
+        Marker(map).apply {
+            position = geoPoints.last()
+            title = endLabel
+            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+        },
     )
 
-    val bounds = LatLngBounds.Builder()
-    latLngs.forEach { bounds.include(it) }
-    map.moveCamera(CameraUpdateFactory.newLatLngBounds(bounds.build(), 100))
+    if (geoPoints.size >= 2) {
+        val box = BoundingBox.fromGeoPoints(geoPoints)
+        map.post { map.zoomToBoundingBox(box, true, 80) }
+    } else {
+        map.controller.setCenter(geoPoints.first())
+        map.controller.setZoom(17.0)
+    }
+
+    map.invalidate()
 }

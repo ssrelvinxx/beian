@@ -40,9 +40,8 @@
     <string name="status_uptime">Uptime</string>
 
     <string name="settings_title">Settings</string>
-    <string name="settings_amap_key">AMap API key</string>
-    <string name="settings_amap_key_hint">Not configured — map shows placeholder</string>
-    <string name="settings_amap_configured">Configured</string>
+    <string name="settings_map">Map</string>
+    <string name="settings_map_desc">Uses OpenStreetMap tiles (osmdroid). No API key needed.</string>
     <string name="settings_permissions">Permissions</string>
     <string name="settings_perm_location">Location</string>
     <string name="settings_perm_usage">Usage access</string>
@@ -60,7 +59,7 @@
     <string name="perm_rationale_location">Location is required to record your track</string>
     <string name="perm_rationale_usage">Usage access is required to read screen time</string>
 
-    <string name="map_not_configured">Map not configured — add an AMap key in Settings</string>
+    <string name="map_login">Sign in required for some tiles</string>
     <string name="map_start">Start</string>
     <string name="map_end">End</string>
     <string name="notif_channel_name">Tracking</string>

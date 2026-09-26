@@ -34,10 +34,6 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.BeiAn">
 
-        <meta-data
-            android:name="com.amap.api.v2.apikey"
-            android:value="${AMAP_KEY}" />
-
         <activity
             android:name=".ui.MainActivity"
             android:exported="true"

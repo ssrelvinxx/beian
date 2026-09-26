@@ -45,9 +45,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val allSummaries: StateFlow<List<DailySummary>> = repository.allSummaries()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    val amapKey: StateFlow<String> = settings.amapKey
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "")
-
     val trackingEnabled: StateFlow<Boolean> = settings.trackingEnabled
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 

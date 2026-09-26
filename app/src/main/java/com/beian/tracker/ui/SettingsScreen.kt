@@ -6,8 +6,6 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.Settings
 import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -19,11 +17,9 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -42,11 +38,9 @@ import kotlinx.coroutines.launch
 @Composable
 fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     val context = LocalContext.current
-    val amapKey by vm.amapKey.collectAsStateWithLifecycle()
     val day by vm.selectedDay.collectAsStateWithLifecycle()
     val points by vm.todayPoints.collectAsStateWithLifecycle()
 
-    var keyInput by remember(amapKey) { mutableStateOf(amapKey) }
     val scope = remember { CoroutineScope(Dispatchers.Main) }
 
     val locationGranted = ContextCompat.checkSelfPermission(
@@ -64,31 +58,21 @@ fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     ) {
         Text(text = stringResource(R.string.settings_title), style = MaterialTheme.typography.headlineSmall)
 
-        // 高德 Key
+        // 地图说明
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Text(text = stringResource(R.string.settings_amap_key), style = MaterialTheme.typography.titleMedium)
                 Text(
-                    text = if (amapKey.isBlank()) {
-                        stringResource(R.string.settings_amap_key_hint)
-                    } else {
-                        stringResource(R.string.settings_amap_configured)
-                    },
+                    text = stringResource(R.string.settings_map),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Text(
+                    text = stringResource(R.string.settings_map_desc),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                OutlinedTextField(
-                    value = keyInput,
-                    onValueChange = { keyInput = it },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Button(onClick = { vm.setAmapKey(keyInput) }) {
-                    Text(text = stringResource(android.R.string.ok))
-                }
             }
         }
 

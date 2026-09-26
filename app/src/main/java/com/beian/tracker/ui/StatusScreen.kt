@@ -33,11 +33,12 @@ fun StatusScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         StatCard(
             stringResource(R.string.status_battery),
             snapshot?.let {
-                "${it.batteryLevel}%" + if (it.batteryCharging) {
-                    " · ${stringResource(R.string.status_charging)}"
+                val suffix = if (it.batteryCharging) {
+                    " · " + stringResource(R.string.status_charging)
                 } else {
                     ""
                 }
+                it.batteryLevel.toString() + "%" + suffix
             } ?: "—",
         )
         StatCard(

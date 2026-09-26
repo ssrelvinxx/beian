@@ -6,8 +6,6 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
-val amapKey: String = (project.findProperty("AMAP_KEY") as String?) ?: ""
-
 android {
     namespace = "com.beian.tracker"
     compileSdk = 35
@@ -18,9 +16,6 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "1.0.0"
-
-        manifestPlaceholders["AMAP_KEY"] = amapKey
-        buildConfigField("String", "AMAP_KEY", "\"$amapKey\"")
     }
 
     buildTypes {
@@ -75,6 +70,7 @@ dependencies {
     ksp(libs.androidx.room.compiler)
 
     implementation(libs.play.services.location)
+    implementation(libs.osmdroid)
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.kotlinx.serialization.json)
 }

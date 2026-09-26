@@ -29,7 +29,6 @@ import com.beian.tracker.service.TrackService
 fun TrackScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val points by vm.todayPoints.collectAsStateWithLifecycle()
-    val amapKey by vm.amapKey.collectAsStateWithLifecycle()
     val tracking by vm.trackingEnabled.collectAsStateWithLifecycle()
 
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -91,7 +90,8 @@ fun TrackScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
 
         TrackMapView(
             points = points,
-            amapKey = amapKey,
+            startLabel = stringResource(R.string.map_start),
+            endLabel = stringResource(R.string.map_end),
             modifier = Modifier
                 .fillMaxWidth()
                 .height(420.dp),

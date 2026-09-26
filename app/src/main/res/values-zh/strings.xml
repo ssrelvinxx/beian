@@ -40,9 +40,8 @@
     <string name="status_uptime">运行时长</string>
 
     <string name="settings_title">设置</string>
-    <string name="settings_amap_key">高德地图 Key</string>
-    <string name="settings_amap_key_hint">未配置 — 地图显示占位提示</string>
-    <string name="settings_amap_configured">已配置</string>
+    <string name="settings_map">地图</string>
+    <string name="settings_map_desc">使用 OpenStreetMap 瓦片（osmdroid），无需申请 Key。</string>
     <string name="settings_permissions">权限</string>
     <string name="settings_perm_location">定位权限</string>
     <string name="settings_perm_usage">使用情况访问</string>
@@ -60,7 +59,7 @@
     <string name="perm_rationale_location">需要定位权限才能记录轨迹</string>
     <string name="perm_rationale_usage">需要「使用情况访问」权限才能读取屏幕时间</string>
 
-    <string name="map_not_configured">地图未配置 — 请在设置里填入高德 Key</string>
+    <string name="map_login">部分瓦片需要登录</string>
     <string name="map_start">起点</string>
     <string name="map_end">终点</string>
     <string name="notif_channel_name">轨迹记录</string>

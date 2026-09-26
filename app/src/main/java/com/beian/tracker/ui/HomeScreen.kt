@@ -49,7 +49,10 @@ fun HomeScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         )
         StatCard(
             stringResource(R.string.home_battery),
-            snapshot?.let { "${it.batteryLevel}%" + if (it.batteryCharging) " ⚡" else "" } ?: "—",
+            snapshot?.let {
+                val suffix = if (it.batteryCharging) " ⚡" else ""
+                it.batteryLevel.toString() + "%" + suffix
+            } ?: "—",
         )
         StatCard(
             stringResource(R.string.home_network),

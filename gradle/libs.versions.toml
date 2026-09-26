@@ -33,8 +33,7 @@ androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = 
 androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
 
 play-services-location = { group = "com.google.android.gms", name = "play-services-location", version.ref = "play-services-location" }
-amap-location = { group = "com.amap.api", name = "location", version.ref = "amap" }
-amap-map2d = { group = "com.amap.api", name = "map2d", version.ref = "amap" }
+osmdroid = { group = "org.osmdroid", name = "osmdroid-android", version = "6.1.20" }
 
 androidx-datastore-preferences = { group = "androidx.datastore", name = "datastore-preferences", version.ref = "datastore" }
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinx-serialization" }

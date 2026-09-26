@@ -27,7 +27,7 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "beian.db",
-                ).fallbackToDestructiveMigration(dropAllTables = true)
+                ).fallbackToDestructiveMigration()
                     .build()
                     .also { instance = it }
             }

@@ -28,7 +28,6 @@ fun HistoryScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     val summaries by vm.allSummaries.collectAsStateWithLifecycle()
     val selected by vm.selectedDay.collectAsStateWithLifecycle()
     val points by vm.todayPoints.collectAsStateWithLifecycle()
-    val amapKey by vm.amapKey.collectAsStateWithLifecycle()
 
     Column(
         modifier = modifier
@@ -40,7 +39,8 @@ fun HistoryScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
 
         TrackMapView(
             points = points,
-            amapKey = amapKey,
+            startLabel = stringResource(R.string.map_start),
+            endLabel = stringResource(R.string.map_end),
             modifier = Modifier
                 .fillMaxWidth()
                 .height(260.dp),
@@ -58,7 +58,7 @@ fun HistoryScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         } else {
-            LazyColumn(modifier = Modifier.fillMaxSize()) {
+            LazyColumn(modifier = Modifier.weight(1f)) {
                 items(days) { day ->
                     val summary = summaries.firstOrNull { it.dayKey == day }
                     Column(
