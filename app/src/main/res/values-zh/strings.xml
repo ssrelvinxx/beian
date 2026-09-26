@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">报备</string>
+    <string name="net_cellular">移动网络</string>
+    <string name="net_none">未连接</string>
+
+    <string name="tab_home">今日</string>
+    <string name="tab_track">轨迹</string>
+    <string name="tab_history">历史</string>
+    <string name="tab_status">状态</string>
+    <string name="tab_settings">设置</string>
+
+    <string name="home_title">今日概览</string>
+    <string name="home_distance">移动距离</string>
+    <string name="home_points">定位点</string>
+    <string name="home_unlock">解锁次数</string>
+    <string name="home_screen">屏幕使用</string>
+    <string name="home_battery">电量</string>
+    <string name="home_network">网络</string>
+
+    <string name="track_title">实时轨迹</string>
+    <string name="track_start">开始记录</string>
+    <string name="track_stop">停止记录</string>
+    <string name="track_active">正在记录</string>
+    <string name="track_inactive">已停止</string>
+
+    <string name="history_title">历史轨迹</string>
+    <string name="history_empty">暂无记录</string>
+    <string name="history_date">日期</string>
+    <string name="history_points">%1$d 点</string>
+    <string name="history_day_detail">当日详情</string>
+
+    <string name="status_updated_at">更新于 %1$s</string>
+    <string name="status_title">设备状态</string>
+    <string name="status_battery">电量</string>
+    <string name="status_charging">充电中</string>
+    <string name="status_screen_time">屏幕使用时间</string>
+    <string name="status_unlock_count">解锁次数</string>
+    <string name="status_network">网络状态</string>
+    <string name="status_uptime">运行时长</string>
+
+    <string name="settings_title">设置</string>
+    <string name="settings_amap_key">高德地图 Key</string>
+    <string name="settings_amap_key_hint">未配置 — 地图显示占位提示</string>
+    <string name="settings_amap_configured">已配置</string>
+    <string name="settings_permissions">权限</string>
+    <string name="settings_perm_location">定位权限</string>
+    <string name="settings_perm_usage">使用情况访问</string>
+    <string name="settings_perm_notification">通知权限</string>
+    <string name="settings_granted">已授权</string>
+    <string name="settings_denied">未授权</string>
+    <string name="settings_grant">去授权</string>
+    <string name="settings_export">导出报备</string>
+    <string name="settings_export_desc">导出今日数据为文本文件，再手动发给对方</string>
+    <string name="settings_share">分享</string>
+    <string name="settings_interval">采样间隔</string>
+    <string name="settings_about">关于</string>
+    <string name="settings_privacy">所有数据仅保存在本机，不上传</string>
+
+    <string name="perm_rationale_location">需要定位权限才能记录轨迹</string>
+    <string name="perm_rationale_usage">需要「使用情况访问」权限才能读取屏幕时间</string>
+
+    <string name="map_not_configured">地图未配置 — 请在设置里填入高德 Key</string>
+    <string name="map_start">起点</string>
+    <string name="map_end">终点</string>
+    <string name="notif_channel_name">轨迹记录</string>
+    <string name="notif_running">正在记录您的轨迹</string>
+
+    <string name="export_done">报备已导出</string>
+    <string name="export_share_title">分享报备</string>
+</resources>
