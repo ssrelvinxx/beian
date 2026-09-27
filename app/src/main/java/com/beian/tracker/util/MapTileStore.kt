@@ -28,11 +28,12 @@ object MapTileStore {
     /** 把 osmdroid 全局配置指向持久目录。App 启动与地图显示前都要调用（幂等）。 */
     fun configure(context: Context) {
         Configuration.getInstance().apply {
+            // 这三个属性在 osmdroid 6.1.x 的 Configuration 上确认存在。
+            // 关键是把 basePath / tileCache 指向应用私有目录（filesDir），
+            // 而不是默认的 cacheDir —— 后者会被系统清理，离线瓦片会一起丢掉。
             userAgentValue = context.packageName
             osmdroidBasePath = baseDir(context)
             osmdroidTileCache = tileCacheDir(context)
-            // 磁盘缓存命中时直接用本地瓦片渲染，无网也不会清空已有缓存
-            loadMapsFromCache = true
         }
     }
 
