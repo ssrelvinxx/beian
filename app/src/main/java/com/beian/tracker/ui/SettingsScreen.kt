@@ -121,11 +121,13 @@ fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                     onClick = {
                         scope.launch {
                             val snapshots = vm.snapshotsOfDayOnce(day)
+                            val appUsage = vm.appUsageOfDayOnce(day)
                             val file = ReportExporter.export(
                                 context = context,
                                 day = day,
                                 points = points,
                                 snapshots = snapshots,
+                                appUsage = appUsage,
                                 distanceMeters = vm.totalDistance(points),
                             )
                             Toast.makeText(
