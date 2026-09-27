@@ -53,18 +53,12 @@
     <string name="settings_perm_usage">Usage access</string>
     <string name="settings_granted">Granted</string>
     <string name="settings_grant">Grant</string>
-    <string name="settings_export">Export report</string>
-    <string name="settings_export_desc">Export today\'s data as a text file, then share it manually</string>
-    <string name="settings_share">Share</string>
     <string name="settings_privacy">All data stays on this device. Nothing is uploaded.</string>
     <string name="map_no_points">No track points yet</string>
     <string name="map_start">Start</string>
     <string name="map_end">End</string>
     <string name="notif_channel_name">Tracking</string>
     <string name="notif_running">Recording your track</string>
-
-    <string name="export_done">Report exported</string>
-    <string name="export_share_title">Share report</string>
     <string name="tab_report">Report</string>
     <string name="tab_backup">Data</string>
     <string name="track_stat_stays">Stays</string>

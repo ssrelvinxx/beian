@@ -149,6 +149,8 @@ class TrackRepository(private val context: Context) {
             firstOpenToday = firstOpenToday,
         )
 
+        // EventDeriver 现在只产出 FIRST_OPEN_TODAY（其余类型全部交给广播实时记录，
+        // 避免轮询用旧快照比对而重复上报）。
         val events = EventDeriver.derive(
             prev = prev,
             batteryLevel = battery.level,
@@ -435,6 +437,7 @@ class TrackRepository(private val context: Context) {
 
         /** 停留段最短时长。 */
         const val STAY_MIN_MS = 10 * 60_000L
+
     }
 }
 

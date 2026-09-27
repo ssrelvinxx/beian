@@ -98,11 +98,25 @@ class EventReceiver : BroadcastReceiver() {
                     EventType.FIRST_OPEN_TODAY ->
                         dao.countOfTypeOnDay(LOCAL_SOURCE, day, EventType.FIRST_OPEN_TODAY) == 0
 
-                    // 电量类：依赖状态跃迁，不做时间窗。只要上一次同类事件不是刚刚
-                    // （同一秒）产生的，就放行 —— 真正的去重交给 EventDeriver 的状态比对。
-                    EventType.BATTERY_LOW,
-                    EventType.BATTERY_FULL,
-                    -> last == null || now - last.timestamp > SAME_MOMENT_MS
+                    // 电量每降 1% 系统都会发一次 BATTERY_CHANGED 广播，
+                    // 只靠时间窗会连报好几条。
+                    //
+                    // 低电量：只有「离开低电量区之后又跌回来」才再报一次。
+                    //   判断依据：上次低电量提醒之后，有没有出现过「结束充电」事件。
+                    //   充电 → 拔掉 → 又掉到 20% 以下 = 新一轮低电量，值得再提醒。
+                    EventType.BATTERY_LOW -> {
+                        if (last == null) {
+                            true
+                        } else {
+                            val stopAfter = dao.latestOfType(LOCAL_SOURCE, EventType.CHARGING_STOP)
+                            val recycled = stopAfter != null && stopAfter.timestamp > last.timestamp
+                            recycled && now - last.timestamp > BATTERY_RECYCLE_MS
+                        }
+                    }
+
+                    // 充满：当天报过就不再重复
+                    EventType.BATTERY_FULL ->
+                        dao.countOfTypeOnDay(LOCAL_SOURCE, day, EventType.BATTERY_FULL) == 0
 
                     // 网络：系统切换时会连发多次广播，给一个短窗口足够。
                     EventType.NET_WIFI,
@@ -110,7 +124,7 @@ class EventReceiver : BroadcastReceiver() {
                     EventType.NET_NONE,
                     -> last == null || now - last.timestamp > NET_DEDUP_MS
 
-                    // 充电/屏幕：瞬时动作，只防同一瞬间的双发。
+                    // 充电 / 屏幕：瞬时动作，只防同一瞬间的双发。
                     else -> last == null || now - last.timestamp > SAME_MOMENT_MS
                 }
 
@@ -169,6 +183,9 @@ class EventReceiver : BroadcastReceiver() {
 
         /** 网络切换的合并窗口。 */
         const val NET_DEDUP_MS = 5_000L
+
+        /** 低电量重复提醒的最小间隔：中途必须充过电（离开低电量区）才会再提醒。 */
+        const val BATTERY_RECYCLE_MS = 30 * 60_000L
 
         /**
          * 动态注册监听的动作。

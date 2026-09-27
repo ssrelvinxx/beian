@@ -53,18 +53,12 @@
     <string name="settings_perm_usage">使用情况访问</string>
     <string name="settings_granted">已授权</string>
     <string name="settings_grant">去授权</string>
-    <string name="settings_export">导出报备</string>
-    <string name="settings_export_desc">导出今日数据为文本文件，再手动发给对方</string>
-    <string name="settings_share">分享</string>
     <string name="settings_privacy">所有数据仅保存在本机，不上传</string>
     <string name="map_no_points">暂无轨迹点</string>
     <string name="map_start">起点</string>
     <string name="map_end">终点</string>
     <string name="notif_channel_name">轨迹记录</string>
     <string name="notif_running">正在记录您的轨迹</string>
-
-    <string name="export_done">报备已导出</string>
-    <string name="export_share_title">分享报备</string>
     <string name="tab_report">报备</string>
     <string name="tab_backup">数据</string>
     <string name="track_stat_stays">停留点</string>

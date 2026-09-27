@@ -5,7 +5,6 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.Settings
-import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,34 +12,22 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.beian.tracker.R
-import com.beian.tracker.util.ReportExporter
 import com.beian.tracker.util.UsageStatsReader
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 
 @Composable
 fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     val context = LocalContext.current
-    val day by vm.selectedDay.collectAsStateWithLifecycle()
-    val points by vm.todayPoints.collectAsStateWithLifecycle()
-
-    val scope = remember { CoroutineScope(Dispatchers.Main) }
 
     val locationGranted = ContextCompat.checkSelfPermission(
         context,
@@ -108,50 +95,7 @@ fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         // ── 后台常驻 ──────────────────────────────────────────────────────────
         BackgroundSection()
 
-        // 导出报备
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Text(text = stringResource(R.string.settings_export), style = MaterialTheme.typography.titleMedium)
-                Text(
-                    text = stringResource(R.string.settings_export_desc),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Button(
-                    onClick = {
-                        scope.launch {
-                            val snapshots = vm.snapshotsOfDayOnce(day)
-                            val appUsage = vm.appUsageOfDayOnce(day)
-                            val appSessions = vm.appSessionsOfDayOnce(day)
-                            val file = ReportExporter.export(
-                                context = context,
-                                day = day,
-                                points = points,
-                                snapshots = snapshots,
-                                appUsage = appUsage,
-                                appSessions = appSessions,
-                                distanceMeters = vm.totalDistance(points),
-                            )
-                            Toast.makeText(
-                                context,
-                                context.getString(R.string.export_done),
-                                Toast.LENGTH_SHORT,
-                            ).show()
-                            ReportExporter.share(
-                                context,
-                                file,
-                                context.getString(R.string.export_share_title),
-                            )
-                        }
-                    },
-                ) {
-                    Text(text = stringResource(R.string.settings_share))
-                }
-            }
-        }
+        // 导出 / 导入已迁到独立的「数据」页（底部导航第 4 个），这里不再重复。
 
         // ── 检查更新 ──────────────────────────────────────────────────────────
         UpdateSection(vm)

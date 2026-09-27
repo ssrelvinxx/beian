@@ -64,49 +64,27 @@ object EventDeriver {
             )
         }
 
-        // ── 电量 ────────────────────────────────────────────────────────────
-        if (batteryLevel in 0..100) {
-            // 首次采集：只记录当前充电状态，不产生"开始充电"噪音
-            if (prev.batteryLevel >= 0) {
-                if (charging && !prev.charging) {
-                    add(EventType.CHARGING_START, "TA的手机开始充电", "当前电量$batteryLevel%", batteryLevel.toLong())
-                }
-                if (!charging && prev.charging) {
-                    add(EventType.CHARGING_STOP, "TA的手机结束充电", "当前电量$batteryLevel%", batteryLevel.toLong())
-                }
-                // 充满：充电中且达到 100
-                if (charging && batteryLevel >= 100 && prev.batteryLevel < 100) {
-                    add(EventType.BATTERY_FULL, "TA的手机电量已充满", "当前电量100%", 100L)
-                }
-                // 低电量：跌破阈值才提醒一次
-                if (!charging && batteryLevel <= LOW_BATTERY && prev.batteryLevel > LOW_BATTERY) {
-                    add(
-                        EventType.BATTERY_LOW,
-                        "TA的手机电量仅剩$batteryLevel%",
-                        "提醒对方充电",
-                        batteryLevel.toLong(),
-                    )
-                }
-            }
-        }
-
-        // ── 网络 ────────────────────────────────────────────────────────────
-        if (prev.networkType != networkType || prev.networkName != networkName) {
-            when (networkType) {
-                DeviceInfo.NET_WIFI -> add(
-                    EventType.NET_WIFI,
-                    if (networkName.isBlank()) "TA连接了WiFi" else "TA连接了WiFi：$networkName",
-                )
-                DeviceInfo.NET_CELLULAR -> add(EventType.NET_CELLULAR, "TA切换为移动网络")
-                DeviceInfo.NET_NONE -> add(EventType.NET_NONE, "TA的网络已断开")
-            }
-        }
+        // ── 说明 ────────────────────────────────────────────────────────────
+        // 充电插拔、电量阈值（充满 / 低电量）、网络切换 这几类事件，
+        // 全部由系统广播实时记录：
+        //   - CHARGING_START / CHARGING_STOP → StaticEventReceiver（静态注册）
+        //   - BATTERY_FULL / BATTERY_LOW     → EventReceiver（动态注册）
+        //   - NET_WIFI / NET_CELLULAR / NET_NONE → EventReceiver（动态注册）
+        //
+        // 这里**故意不再重复推导**：
+        // 轮询只是 60 秒采一次，用快照前后比对推导这些事件，
+        // 会因为「上一次快照」跨越了很长一段断连时间而误判 ——
+        // 比如服务被杀 30 分钟期间用户插了充电器（广播已记录），
+        // 服务重启后第一次轮询比对旧快照，会再补一条「开始充电」，造成重复。
+        //
+        // 宁可漏（极端情况下广播被系统丢掉），也不要重复报同样的内容。
 
         // ── 屏幕 ────────────────────────────────────────────────────────────
         // 屏幕开关由 EventReceiver 实时监听写入。
         // 「今天第 1 次打开手机」正常情况下也由广播在亮屏瞬间写入；
         // 这里只在「当前屏幕亮着 + 当天还没有这条记录」时兜底，
         // 覆盖服务当天启动较晚、漏掉那次亮屏广播的情况。
+        // 该事件用「按天固定 id」，所以广播与轮询不会产生两条。
         if (screenOn && !prev.firstOpenToday) {
             add(EventType.FIRST_OPEN_TODAY, "TA今天第1次打开手机")
         }

@@ -3,7 +3,6 @@ package com.beian.tracker.service
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.os.BatteryManager
 import com.beian.tracker.data.AppDatabase
 import com.beian.tracker.data.EventLog
 import com.beian.tracker.data.EventType
