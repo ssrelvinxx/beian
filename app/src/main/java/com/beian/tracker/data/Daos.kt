@@ -40,6 +40,9 @@ interface TrackPointDao {
     @Query("DELETE FROM track_points WHERE sourceId = :sourceId")
     suspend fun deleteSource(sourceId: String)
 
+    @Query("SELECT DISTINCT dayKey FROM track_points WHERE sourceId = :sourceId")
+    suspend fun daysOfSource(sourceId: String): List<String>
+
     @Query("DELETE FROM track_points WHERE timestamp < :before")
     suspend fun deleteOlderThan(before: Long)
 }
@@ -175,6 +178,9 @@ interface EventLogDao {
 
     @Query("DELETE FROM event_log WHERE sourceId = :sourceId")
     suspend fun deleteSource(sourceId: String)
+
+    @Query("SELECT DISTINCT dayKey FROM event_log WHERE sourceId = :sourceId")
+    suspend fun daysOfSource(sourceId: String): List<String>
 
     @Query("DELETE FROM event_log WHERE sourceId = :sourceId AND dayKey = :day")
     suspend fun deleteDay(sourceId: String, day: String)

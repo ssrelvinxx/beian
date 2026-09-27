@@ -82,6 +82,13 @@
     <string name="backup_import_action">选择 .beian 文件</string>
     <string name="backup_imported">已导入</string>
     <string name="backup_delete">删除</string>
+    <string name="backup_clear_local">清空本机数据</string>
+    <string name="backup_clear_local_hint">删除本机采集的轨迹、事件和汇总。已导入的对方数据不受影响。</string>
+    <string name="backup_clear_local_action">清空</string>
+    <string name="backup_clear_local_title">确定清空本机数据？</string>
+    <string name="backup_clear_local_message">本机采集的轨迹、报备事件和每日汇总都会被删除，无法恢复。已导入的对方数据不受影响。</string>
+    <string name="backup_clear_local_confirm">清空</string>
+    <string name="backup_clear_local_done">本机数据已清空</string>
     <string name="backup_import_dialog_title">给这份数据起个名字</string>
     <string name="backup_import_dialog_hint">填个昵称，方便区分不同来源</string>
     <string name="backup_import_confirm">导入</string>

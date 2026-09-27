@@ -82,6 +82,13 @@
     <string name="backup_import_action">Pick a .beian file</string>
     <string name="backup_imported">Imported</string>
     <string name="backup_delete">Delete</string>
+    <string name="backup_clear_local">Clear local data</string>
+    <string name="backup_clear_local_hint">Removes tracks, events and summaries collected on this device. Imported data is kept.</string>
+    <string name="backup_clear_local_action">Clear</string>
+    <string name="backup_clear_local_title">Clear local data?</string>
+    <string name="backup_clear_local_message">Tracks, report events and daily summaries collected on this device will be deleted. This cannot be undone. Imported peer data is not affected.</string>
+    <string name="backup_clear_local_confirm">Clear</string>
+    <string name="backup_clear_local_done">Local data cleared</string>
     <string name="backup_import_dialog_title">Name this data</string>
     <string name="backup_import_dialog_hint">Enter a nickname so you can tell sources apart</string>
     <string name="backup_import_confirm">Import</string>

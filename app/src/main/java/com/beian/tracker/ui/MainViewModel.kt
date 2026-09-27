@@ -72,6 +72,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * 当前查看的来源：LOCAL 是本机，其余是导入的对方数据。
      * 顶部可切换。
      */
+    /**
+     * 只读探测用的临时 sourceId —— 不落库，仅为了让 decode 产出合法结构。
+     */
+    private const val PROBE_SOURCE_ID = "PROBE"
+
     private val _sourceId = MutableStateFlow(LOCAL_SOURCE)
     val sourceId: StateFlow<String> = _sourceId.asStateFlow()
 
@@ -200,9 +205,29 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * 导入对方数据。
      * @return 导入结果描述；失败抛出带中文原因的异常。
      */
+    /**
+     * 先解析文件、读出里面的昵称，供导入弹窗做默认值 ——
+     * 对方导出时已经填过昵称了，不该再让人重填一遍。
+     *
+     * @return 文件里的昵称（可能为空），解析失败时抛异常
+     */
+    fun peekImportNickname(text: String): String =
+        BackupCodec.decode(text, sourceIdOverride = PROBE_SOURCE_ID).nickname
+
     suspend fun importBackupJson(text: String, nickname: String): ImportedSource {
-        val bundle = BackupCodec.decode(text)
+        // ⚠️ 必须覆盖 sourceId。
+        // 老版本导出包里的 sourceId 是 "LOCAL"，直接沿用会和本机数据撞 id，
+        // 导致报备页出现两张卡、切不过去、本机数据被覆盖。
+        // 这里统一换成一次性生成的来源 id，每个导入包各自独立。
+        val newSourceId = "PEER-" + System.currentTimeMillis().toString(36)
+        val bundle = BackupCodec.decode(text, sourceIdOverride = newSourceId)
         return repository.importBundle(bundle, nickname)
+    }
+
+    /** 清空本机采集数据（不影响导入的对方数据）。 */
+    suspend fun clearLocalData() {
+        repository.clearLocalData()
+        post("本机数据已清空")
     }
 
     suspend fun deleteSource(sourceId: String) {

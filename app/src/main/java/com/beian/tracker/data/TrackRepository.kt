@@ -284,6 +284,20 @@ class TrackRepository(private val context: Context) {
         sourceDao.delete(sourceId)
     }
 
+    /**
+     * 清空本机采集到的数据。
+     *
+     * ⚠️ 只动 [LOCAL_SOURCE] 名下的东西，导入的对方数据不受影响。
+     * 汇总表是按天不按来源的，所以清完要把涉及的每一天重算一遍，
+     * 否则历史页还挂着已经不存在的里程。
+     */
+    suspend fun clearLocalData() {
+        val days = pointDao.daysOfSource(LOCAL_SOURCE) + eventDao.daysOfSource(LOCAL_SOURCE)
+        eventDao.deleteSource(LOCAL_SOURCE)
+        pointDao.deleteSource(LOCAL_SOURCE)
+        days.distinct().filter { it.isNotBlank() }.forEach { refreshSummary(LOCAL_SOURCE, it) }
+    }
+
     // ── 导出 / 导入 ───────────────────────────────────────────────────────────
 
     /** 打包本机数据。days = 0 表示全部；否则只取最近 N 天。 */
@@ -311,7 +325,11 @@ class TrackRepository(private val context: Context) {
         }
 
         return BackupCodec.Bundle(
-            sourceId = LOCAL_SOURCE,
+            // ⚠️ 绝不能是 LOCAL_SOURCE。
+            // 导入端会把这个 id 当作「对方」的标识，
+            // 如果导出包里也是 LOCAL，导入时就会和本机数据撞在同一个 id 上 ——
+            // 表现为：报备页出现两张卡、切不过去、本机数据被对方覆盖。
+            sourceId = LOCAL_EXPORT_ID,
             nickname = nickname,
             exportedAt = System.currentTimeMillis(),
             points = points,

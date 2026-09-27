@@ -50,6 +50,7 @@ fun BackupScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     var nicknameInput by remember { mutableStateOf(myNickname) }
     var pendingImportUri by remember { mutableStateOf<Uri?>(null) }
     var nicknameForImport by remember { mutableStateOf("") }
+    var confirmClearLocal by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
 
     val scope = androidx.compose.runtime.rememberCoroutineScope()
@@ -82,6 +83,18 @@ fun BackupScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         if (uri == null) return@rememberLauncherForActivityResult
         pendingImportUri = uri
         nicknameForImport = ""
+        // 读一下文件，把对方导出时填的昵称预填进输入框 —— 不用再问一遍
+        scope.launch {
+            runCatching {
+                val text = context.contentResolver.openInputStream(uri)
+                    ?.bufferedReader()?.use { it.readText() }
+                    ?: throw IllegalArgumentException("无法读取文件")
+                vm.peekImportNickname(text)
+            }.onSuccess { name ->
+                // 仅在用户还没输入时填入，别覆盖正在打字的内容
+                if (nicknameForImport.isBlank()) nicknameForImport = name
+            }
+        }
     }
 
     Column(
@@ -188,6 +201,36 @@ fun BackupScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
             }
         }
 
+        // ── 清空本机数据 ──────────────────────────────────────────────────────
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.backup_clear_local),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    text = stringResource(R.string.backup_clear_local_hint),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Button(
+                    onClick = { confirmClearLocal = true },
+                    enabled = !busy && !confirmClearLocal,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer,
+                        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                    ),
+                ) {
+                    Text(stringResource(R.string.backup_clear_local_action))
+                }
+            }
+        }
+
         // ── 已导入的对方数据 ──────────────────────────────────────────────────
         if (sources.isNotEmpty()) {
             Text(
@@ -235,6 +278,40 @@ fun BackupScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         }
 
         Spacer(Modifier.size(24.dp))
+    }
+
+    // ── 清空本机数据：二次确认 ─────────────────────────────────────────────────
+    if (confirmClearLocal) {
+        AlertDialog(
+            onDismissRequest = { confirmClearLocal = false },
+            title = { Text(stringResource(R.string.backup_clear_local_title)) },
+            text = { Text(stringResource(R.string.backup_clear_local_message)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmClearLocal = false
+                        scope.launch {
+                            vm.clearLocalData()
+                            Toast.makeText(
+                                context,
+                                context.getString(R.string.backup_clear_local_done),
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        }
+                    },
+                ) {
+                    Text(
+                        text = stringResource(R.string.backup_clear_local_confirm),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmClearLocal = false }) {
+                    Text(stringResource(R.string.backup_cancel))
+                }
+            },
+        )
     }
 
     // ── 导入时填昵称 ──────────────────────────────────────────────────────────
