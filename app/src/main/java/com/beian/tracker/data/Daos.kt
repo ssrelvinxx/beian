@@ -66,3 +66,20 @@ interface DailySummaryDao {
     @Query("SELECT * FROM daily_summary WHERE dayKey = :day")
     suspend fun getDay(day: String): DailySummary?
 }
+@Dao
+interface AppUsageDao {
+    @Upsert
+    suspend fun upsertAll(items: List<AppUsage>)
+
+    @Query("SELECT * FROM app_usage WHERE dayKey = :day ORDER BY usageMs DESC")
+    fun observeByDay(day: String): Flow<List<AppUsage>>
+
+    @Query("SELECT * FROM app_usage WHERE dayKey = :day ORDER BY usageMs DESC")
+    suspend fun getByDay(day: String): List<AppUsage>
+
+    @Query("DELETE FROM app_usage WHERE dayKey = :day")
+    suspend fun deleteDay(day: String)
+
+    @Query("DELETE FROM app_usage WHERE dayKey < :beforeDay")
+    suspend fun deleteBeforeDay(beforeDay: String)
+}
