@@ -57,3 +57,20 @@ data class DailySummary(
     val firstSeen: Long,
     val lastSeen: Long,
 )
+/** 某个 App 在某天的使用时长。 */
+@Entity(
+    tableName = "app_usage",
+    primaryKeys = ["dayKey", "packageName"],
+    indices = [Index("dayKey")],
+)
+data class AppUsage(
+    val dayKey: String,
+    val packageName: String,
+    val appLabel: String,
+    /** 当日使用时长（毫秒）。 */
+    val usageMs: Long,
+    /** 当日进入前台的次数。 */
+    val launchCount: Int,
+    /** 最后使用时间。 */
+    val lastUsed: Long,
+)
