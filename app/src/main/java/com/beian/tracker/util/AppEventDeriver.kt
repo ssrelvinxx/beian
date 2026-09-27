@@ -20,29 +20,73 @@ import com.beian.tracker.data.LOCAL_SOURCE
  */
 object AppEventDeriver {
 
-    /** 短于这个时长的片段不记 —— 多是切换路过、误触。 */
-    const val MIN_DURATION_MS = 5_000L
+    /**
+     * 短于这个时长的片段不记 —— 多是切换路过、误触。
+     *
+     * 5 秒太短了：从桌面点进一个 App、退出来，往往就有 5~8 秒。
+     * 15 秒才算「真的用了一下」。
+     */
+    const val MIN_DURATION_MS = 15_000L
 
     /**
-     * 系统级包名，记进来没有意义。
-     * 前两个是桌面和系统 UI，用户在桌面上划来划去不算「打开了 App」。
+     * 系统级 / 非用户主动打开的包名，记进来没有意义。
+     *
+     * ⚠️ 不要只列固定包名 —— 国产 ROM 的自有组件层出不穷
+     * （com.oplus.appdetail 这种，用户根本没「打开」它）。
+     * 所以下面用「前缀」匹配来覆盖各家 ROM 的系统命名空间。
      */
     private val IGNORED_PACKAGES = setOf(
-        "com.android.systemui",
         "android",
+        "com.android.systemui",
         "com.android.launcher",
         "com.android.launcher2",
         "com.android.launcher3",
         "com.google.android.apps.nexuslauncher",
-        "com.miui.home",
-        "com.huawei.android.launcher",
-        "com.oppo.launcher",
-        "com.bbk.launcher2",
     )
 
-    /** 包名前缀：这些是系统应用，通常不需要报备。 */
+    /**
+     * 前缀匹配：命中即视为系统组件。
+     *
+     * 这些命名空间下几乎全是 ROM 自带的东西 ——
+     * 桌面、权限页、应用详情、设置向导、后台管理…
+     * 它们会频繁进入前台，但都不是用户「打开了一个 App」。
+     */
     private val IGNORED_PREFIXES = listOf(
+        // AOSP / Google
+        "com.android.systemui",
         "com.android.settings",
+        "com.android.providers.",
+        "com.android.server.",
+        "com.android.internal.",
+        "com.google.android.permissioncontroller",
+        "com.google.android.packageinstaller",
+        "com.android.permissioncontroller",
+        "com.android.packageinstaller",
+        // 小米
+        "com.miui.",
+        "com.xiaomi.",
+        "com.android.thememanager",
+        // OPPO / 一加 / realme
+        "com.oplus.",
+        "com.coloros.",
+        "com.oppo.",
+        "com.oneplus.",
+        "com.realme.",
+        // vivo / iQOO
+        "com.vivo.",
+        "com.iqoo.",
+        "com.bbk.",
+        // 华为 / 荣耀
+        "com.huawei.",
+        "com.hihonor.",
+        "com.honor.",
+        // 三星
+        "com.samsung.android.",
+        "com.sec.android.",
+        // 其他常见
+        "com.android.vending",
+        "com.google.android.gms",
+        "com.google.android.gsf",
     )
 
     /**
@@ -55,6 +99,7 @@ object AppEventDeriver {
         packageName != selfPackage &&
             packageName !in IGNORED_PACKAGES &&
             IGNORED_PREFIXES.none { packageName.startsWith(it) }
+
 
     /**
      * @param sessions 当天的 App 前台片段（来自 UsageStatsReader）

@@ -194,12 +194,26 @@ object UsageStatsReader {
     }
 
     /** 包名 → 应用显示名。 */
+    /**
+     * 取应用显示名。
+     *
+     * 取不到时**不要**返回整串包名（会显示成 com.tencent.tmgp.dfm 糊在界面上），
+     * 退化成包名最后一段更可读。
+     *
+     * 取不到通常是因为 Android 11+ 的包可见性限制 ——
+     * 已在 AndroidManifest 里声明 QUERY_ALL_PACKAGES + <queries> 解决。
+     */
     private fun labelOf(context: Context, packageName: String): String = try {
         val pm = context.packageManager
-        pm.getApplicationLabel(pm.getApplicationInfo(packageName, 0)).toString()
+        val info = pm.getApplicationInfo(packageName, 0)
+        pm.getApplicationLabel(info).toString().ifBlank { shortName(packageName) }
     } catch (_: Exception) {
-        packageName
+        shortName(packageName)
     }
+
+    /** com.tencent.tmgp.dfm -> tmgp.dfm 之前取最后一段：dfm */
+    private fun shortName(packageName: String): String =
+        packageName.substringAfterLast('.').ifBlank { packageName }
 
     /**
      * 读取今日屏幕使用时长 / 解锁次数 / 亮屏次数。

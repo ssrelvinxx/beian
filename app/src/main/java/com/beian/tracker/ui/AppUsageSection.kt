@@ -17,7 +17,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -45,7 +45,7 @@ fun AppUsageSection(vm: MainViewModel, modifier: Modifier = Modifier) {
 
     if (usage.isEmpty()) return
 
-    var expanded by remember { mutableStateOf(false) }
+    var expanded by rememberSaveable { mutableStateOf(false) }
     val visible = if (expanded) usage else usage.take(COLLAPSED_COUNT)
     val total = usage.sumOf { it.usageMs }
     val max = usage.maxOf { it.usageMs }.coerceAtLeast(1L)
@@ -59,10 +59,12 @@ fun AppUsageSection(vm: MainViewModel, modifier: Modifier = Modifier) {
             modifier = Modifier.padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            // ── 标题行：名称 + 总时长 ─────────────────────────────────────────
+            // ── 标题行：名称 + 总时长 + 展开/收起 ────────────────────────────
+            // 展开按钮必须放在这里（列表上方）。
+            // 之前放在列表下方，展开后列表变长会把按钮推出屏幕，
+            // 用户滚到卡片底部才能收起 —— 看起来就是「收不回去」。
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
@@ -70,6 +72,7 @@ fun AppUsageSection(vm: MainViewModel, modifier: Modifier = Modifier) {
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
                 )
+                Spacer(Modifier.weight(1f))
                 Text(
                     text = stringResource(
                         R.string.report_app_usage_total,
@@ -78,6 +81,21 @@ fun AppUsageSection(vm: MainViewModel, modifier: Modifier = Modifier) {
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                if (usage.size > COLLAPSED_COUNT) {
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        text = if (expanded) {
+                            stringResource(R.string.report_app_usage_less)
+                        } else {
+                            stringResource(R.string.report_app_usage_more, usage.size - COLLAPSED_COUNT)
+                        },
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier
+                            .clickable { expanded = !expanded }
+                            .padding(vertical = 4.dp, horizontal = 2.dp),
+                    )
+                }
             }
 
             // ── 排行 ─────────────────────────────────────────────────────────
@@ -85,23 +103,6 @@ fun AppUsageSection(vm: MainViewModel, modifier: Modifier = Modifier) {
                 AppUsageRow(item = item, maxMs = max)
             }
 
-            // ── 展开 / 收起 ───────────────────────────────────────────────────
-            if (usage.size > COLLAPSED_COUNT) {
-                val hidden = usage.size - COLLAPSED_COUNT
-                Text(
-                    text = if (expanded) {
-                        stringResource(R.string.report_app_usage_less)
-                    } else {
-                        stringResource(R.string.report_app_usage_more, hidden)
-                    },
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { expanded = !expanded }
-                        .padding(vertical = 4.dp),
-                )
-            }
         }
     }
 }

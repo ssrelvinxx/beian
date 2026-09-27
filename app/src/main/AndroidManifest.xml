@@ -32,6 +32,15 @@
     <!-- 检查更新：下载并安装新版 APK（仍需用户手动确认安装） -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
+    <!--
+      App 名称解析：Android 11+ 有包可见性限制，
+      不声明的话 getApplicationInfo() 会抛 NameNotFoundException，
+      App 使用排行 / 打开记录就只能显示包名（me.rerere.rikkahub 这种）。
+      本项目是自用侧载，不上应用商店，因此直接申请全部包可见性。
+    -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
+
     <application
         android:name=".BeiAnApp"
         android:allowBackup="true"
@@ -93,4 +102,15 @@
         </provider>
 
     </application>
+    <!--
+      兜底：个别 ROM 对 QUERY_ALL_PACKAGES 的处理不一致，
+      这里显式声明要查询的应用范围。LAUNCHER 类足以覆盖用户会打开的所有 App。
+    -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+
 </manifest>
