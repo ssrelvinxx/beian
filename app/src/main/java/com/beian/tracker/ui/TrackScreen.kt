@@ -90,8 +90,6 @@ fun TrackScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
 
         TrackMapView(
             points = points,
-            startLabel = stringResource(R.string.map_start),
-            endLabel = stringResource(R.string.map_end),
             modifier = Modifier
                 .fillMaxWidth()
                 .height(420.dp),
