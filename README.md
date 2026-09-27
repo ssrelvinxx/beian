@@ -6,7 +6,7 @@
 ## 功能
 
 - 实时轨迹记录（前台服务 + Fused Location）
-- 地图展示当日 / 历史轨迹（高德 2D 地图）
+- 地图展示当日 / 历史轨迹（OpenStreetMap，无需 Key）
 - 历史轨迹按天回看
 - 设备状态：电量、屏幕使用时间、解锁次数、亮屏次数、网络状态
 - 导出当日报备为文本文件，手动分享
@@ -19,15 +19,10 @@
 
 APK 输出：`app/build/outputs/apk/debug/app-debug.apk`
 
-## 高德地图 Key
+## 地图
 
-在 `Settings` 页填入高德 Key，或构建时注入：
-
-```bash
-./gradlew assembleDebug -PAMAP_KEY=你的Key
-```
-
-未配置 Key 时地图区域显示占位提示，其余功能正常。
+使用 OpenStreetMap 瓦片，无需 API Key。首次加载瓦片需要联网，
+之后瓦片会缓存在本地。
 
 ## 权限说明
 

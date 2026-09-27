@@ -1,4 +1,2 @@
--dontwarn com.amap.**
--keep class com.amap.api.** { *; }
--keep class com.autonavi.** { *; }
+-keep class org.osmdroid.** { *; }
 -keep class com.google.android.gms.** { *; }

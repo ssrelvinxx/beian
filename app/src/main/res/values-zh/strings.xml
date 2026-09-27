@@ -26,7 +26,6 @@
 
     <string name="history_title">历史轨迹</string>
     <string name="history_empty">暂无记录</string>
-    <string name="history_date">日期</string>
     <string name="history_points">%1$d 点</string>
     <string name="history_day_detail">当日详情</string>
 
@@ -45,21 +44,13 @@
     <string name="settings_permissions">权限</string>
     <string name="settings_perm_location">定位权限</string>
     <string name="settings_perm_usage">使用情况访问</string>
-    <string name="settings_perm_notification">通知权限</string>
     <string name="settings_granted">已授权</string>
-    <string name="settings_denied">未授权</string>
     <string name="settings_grant">去授权</string>
     <string name="settings_export">导出报备</string>
     <string name="settings_export_desc">导出今日数据为文本文件，再手动发给对方</string>
     <string name="settings_share">分享</string>
-    <string name="settings_interval">采样间隔</string>
-    <string name="settings_about">关于</string>
     <string name="settings_privacy">所有数据仅保存在本机，不上传</string>
-
-    <string name="perm_rationale_location">需要定位权限才能记录轨迹</string>
-    <string name="perm_rationale_usage">需要「使用情况访问」权限才能读取屏幕时间</string>
-
-    <string name="map_login">部分瓦片需要登录</string>
+    <string name="map_no_points">暂无轨迹点</string>
     <string name="map_start">起点</string>
     <string name="map_end">终点</string>
     <string name="notif_channel_name">轨迹记录</string>

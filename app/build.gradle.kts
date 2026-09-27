@@ -70,7 +70,7 @@ dependencies {
     ksp(libs.androidx.room.compiler)
 
     implementation(libs.play.services.location)
-    implementation(libs.osmdroid)
+    implementation(libs.osmdroid.android)
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.kotlinx.serialization.json)
 }

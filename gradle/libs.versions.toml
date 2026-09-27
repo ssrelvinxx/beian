@@ -9,7 +9,7 @@ activity-compose = "1.9.3"
 room = "2.6.1"
 navigation = "2.8.5"
 play-services-location = "21.3.0"
-amap = "10.0.600_loc6.4.7_sea9.7.4"
+osmdroid = "6.1.20"
 datastore = "1.1.1"
 kotlinx-serialization = "1.7.3"
 
@@ -33,7 +33,7 @@ androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = 
 androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
 
 play-services-location = { group = "com.google.android.gms", name = "play-services-location", version.ref = "play-services-location" }
-osmdroid = { group = "org.osmdroid", name = "osmdroid-android", version = "6.1.20" }
+osmdroid-android = { group = "org.osmdroid", name = "osmdroid-android", version.ref = "osmdroid" }
 
 androidx-datastore-preferences = { group = "androidx.datastore", name = "datastore-preferences", version.ref = "datastore" }
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
