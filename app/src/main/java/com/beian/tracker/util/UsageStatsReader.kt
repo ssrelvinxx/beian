@@ -33,6 +33,15 @@ data class AppSessionStat(
 
 object UsageStatsReader {
 
+    /**
+     * 同一 App 的相邻片段合并阈值。
+     *
+     * 即使闭环排除了后台时间，仍会有「切走几秒又回来」造成的碎片
+     * （去了趟通知栏、被系统弹窗打断、分屏切换）。
+     * 间隔小于该值的两段视为同一次使用。
+     */
+    private const val MERGE_GAP_MS = 2 * 60 * 1000L
+
     /** 是否已授予「使用情况访问」权限。 */
     fun hasPermission(context: Context): Boolean {
         val appOps = context.getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
@@ -137,10 +146,21 @@ object UsageStatsReader {
 
         val out = ArrayList<AppSessionStat>()
         var screenOn = false
+
         // 当前处于前台的 App 及其开始时间
         var curPkg: String? = null
         var curStart = -1L
+        // App 已退到后台，但屏幕仍亮着 —— 这时不算「结束」，只是「暂时不在最前面」
+        var curBackgrounded = false
+        // 退到后台的时刻：结算时用它当右端点，后台时长天然被排除
+        var curBackgroundAt = -1L
 
+        /**
+         * 结算当前片段。
+         *
+         * [at] 是前台时段的右端点。注意调用方传的必须是「它真正离开前台」的时刻，
+         * 而不是收到 MOVE_TO_BACKGROUND 的时刻 —— 后台时间不计入前台使用。
+         */
         fun closeCurrent(at: Long, stillOpen: Boolean = false) {
             val pkg = curPkg ?: return
             val s0 = curStart
@@ -158,6 +178,7 @@ object UsageStatsReader {
             if (!stillOpen) {
                 curPkg = null
                 curStart = -1L
+                curBackgrounded = false
             }
         }
 
@@ -165,32 +186,82 @@ object UsageStatsReader {
             events.getNextEvent(event)
             when (event.eventType) {
                 UsageEvents.Event.SCREEN_INTERACTIVE -> screenOn = true
+
                 UsageEvents.Event.SCREEN_NON_INTERACTIVE -> {
                     screenOn = false
-                    // 熄屏：结束当前片段
+                    // 熄屏：前台时段到此为止
                     closeCurrent(event.timeStamp)
                 }
+
                 UsageEvents.Event.MOVE_TO_FOREGROUND -> {
                     val pkg = event.packageName ?: continue
-                    if (pkg == curPkg) continue
-                    // 切到新 App：结束上一个
-                    closeCurrent(event.timeStamp)
+                    if (pkg == curPkg) {
+                        // 同一个 App 又回到前台：把中间在后台的那段时间排除掉。
+                        // 做法是就地结算「上一次的前台时段」，然后以此刻为新起点。
+                        if (curBackgrounded) {
+                            // 结算时用「退到后台的时刻」作为终点，后台时长天然被排除
+                            closeCurrent(curBackgroundAt)
+                            curPkg = pkg
+                            curStart = event.timeStamp
+                            curBackgrounded = false
+                        }
+                        continue
+                    }
+                    // 真的切到别的 App：结算上一个（若有）
+                    if (curPkg != null) {
+                        closeCurrent(if (curBackgrounded) curBackgroundAt else event.timeStamp)
+                    }
                     curPkg = pkg
                     curStart = event.timeStamp
+                    curBackgrounded = false
                 }
+
                 UsageEvents.Event.MOVE_TO_BACKGROUND -> {
                     val pkg = event.packageName ?: continue
-                    if (pkg == curPkg) closeCurrent(event.timeStamp)
+                    if (pkg == curPkg) {
+                        // ⚠️ 关键改动：不再立即结束。
+                        // App 退到后台 ≠ 用户不用了（等消息、看通知、切走两秒再回来）。
+                        // 只记下时刻，等它真的被别的 App 顶掉、或熄屏，再结算。
+                        curBackgrounded = true
+                        curBackgroundAt = event.timeStamp
+                    }
                 }
             }
         }
 
-        // 收尾：仍在使用的片段
+        // 收尾：仍在使用的片段（屏幕亮着才算）
         if (curPkg != null && curStart > 0 && screenOn) {
             closeCurrent(end, stillOpen = true)
         }
 
-        return out.sortedBy { it.startAt }
+        return mergeAdjacent(out).sortedBy { it.startAt }
+    }
+
+    private fun mergeAdjacent(sessions: List<AppSessionStat>): List<AppSessionStat> {
+        if (sessions.size <= 1) return sessions
+        val sorted = sessions.sortedBy { it.startAt }
+        val merged = ArrayList<AppSessionStat>()
+        for (s in sorted) {
+            val last = merged.lastOrNull()
+            val samePkg = last != null && last.packageName == s.packageName
+            // 用「上一段的实际结束时刻」算间隔，不是用跨度 —— 否则后台时间会混进来
+            val lastEnd = if (last != null) last.startAt + last.durationMs else 0L
+            val gap = if (last != null) s.startAt - lastEnd else Long.MAX_VALUE
+            if (samePkg && gap in 0..MERGE_GAP_MS) {
+                // ⚠️ 时长累加，不是取首尾跨度。
+                // 跨度会把中间「切走的那几十秒」也算成使用时长，
+                // 而我们要的是纯前台时间。
+                val newDuration = last!!.durationMs + s.durationMs
+                merged[merged.size - 1] = last.copy(
+                    // endAt 仅用于展示/调试，取最后一段的结束
+                    endAt = if (s.endAt == 0L) 0L else lastEnd + gap + s.durationMs,
+                    durationMs = newDuration,
+                )
+            } else {
+                merged.add(s)
+            }
+        }
+        return merged
     }
 
     /** 包名 → 应用显示名。 */
