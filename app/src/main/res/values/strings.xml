@@ -30,6 +30,9 @@
     <string name="history_day_detail">Day detail</string>
 
     <string name="status_updated_at">Updated at %1$s</string>
+    <string name="status_app_usage">Screen time by app</string>
+    <string name="status_app_usage_empty">No usage data — grant usage access in Settings</string>
+    <string name="status_app_launches">%1$d opens</string>
     <string name="status_title">Device Status</string>
     <string name="status_battery">Battery</string>
     <string name="status_charging">Charging</string>
