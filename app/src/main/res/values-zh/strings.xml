@@ -132,4 +132,19 @@
     <string name="map_offline_tip">提示：地图瓦片来自 OpenStreetMap，下载个几百张够个人使用，请勿大批量抓取。已缓存的区域即使断网也能正常显示。</string>
     <string name="map_offline_progress">%1$d/%2$d（%3$d%%）</string>
     <string name="map_offline_failed"> · 失败 %1$d</string>
+    <string name="settings_bg_title">后台常驻</string>
+    <string name="settings_bg_desc">不加白名单的话，息屏一段时间后系统可能冻结应用，导致轨迹断点、事件丢失。</string>
+    <string name="settings_bg_battery">忽略电池优化</string>
+    <string name="settings_bg_battery_desc">让系统不要在息屏后冻结本应用</string>
+    <string name="settings_bg_battery_ok">已允许</string>
+    <string name="settings_bg_battery_no">未允许</string>
+    <string name="settings_bg_battery_btn">去允许</string>
+    <string name="settings_bg_autostart">允许自启动</string>
+    <string name="settings_bg_autostart_desc">%1$s 需要这个才能在重启后继续记录</string>
+    <string name="settings_bg_autostart_btn">去设置</string>
+    <string name="settings_bg_note">授权后息屏也能持续记录，不会断点。</string>
+    <string name="settings_bg_vendor_note">%1$s 有额外的后台限制，建议同时在系统设置里允许「自启动」和「后台运行」。</string>
+    <string name="bg_warn_title">后台运行受限</string>
+    <string name="bg_warn_desc">点此授权，否则息屏后轨迹会断点、事件会丢。</string>
+    <string name="bg_warn_action">去修复</string>
 </resources>

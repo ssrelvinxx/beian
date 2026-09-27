@@ -163,6 +163,53 @@ class TrackRepository(private val context: Context) {
         refreshSummary(LOCAL_SOURCE, day)
     }
 
+    /**
+     * 断连补偿：Service 被杀掉的那段时间，屏幕开关事件会漏记。
+     *
+     * 系统 UsageStats 里有完整的屏幕交互记录，用它把缺口补上。
+     * 在 Service 每次启动时调用一次即可（幂等：已存在的 id 会被 REPLACE 覆盖）。
+     *
+     * @return 补记的事件条数
+     */
+    suspend fun backfillScreenEvents(lookbackMs: Long = 6 * 60 * 60_000L): Int {
+        val now = System.currentTimeMillis()
+
+        // 上一条屏幕事件的时间，或最多回溯 6 小时
+        val lastScreen = listOfNotNull(
+            eventDao.latestOfType(LOCAL_SOURCE, EventType.SCREEN_ON),
+            eventDao.latestOfType(LOCAL_SOURCE, EventType.SCREEN_OFF),
+        ).maxByOrNull { it.timestamp }
+
+        val since = maxOf(lastScreen?.timestamp ?: 0L, now - lookbackMs)
+        if (since >= now) return 0
+
+        // 断开很短（<2 分钟）就不用补，避免启动瞬间误补
+        if (now - since < 2 * 60_000L) return 0
+
+        val missed = UsageStatsReader.screenEventsBetween(context, since, now)
+        if (missed.isEmpty()) return 0
+
+        val items = missed.map { (ts, isOn) ->
+            val type = if (isOn) EventType.SCREEN_ON else EventType.SCREEN_OFF
+            EventLog(
+                id = "$LOCAL_SOURCE:$type:$ts",
+                sourceId = LOCAL_SOURCE,
+                dayKey = TimeUtil.dayKey(ts),
+                type = type,
+                timestamp = ts,
+                title = if (isOn) "TA打开了手机屏幕" else "TA关闭了手机屏幕",
+                detail = "断连期间补记",
+            )
+        }
+
+        // 只补那些确实没有的（id 唯一，REPLACE 保证不重复）
+        eventDao.insertAll(items.distinctBy { it.id })
+
+        // 补完刷新涉及的每一天的汇总
+        items.map { it.dayKey }.distinct().forEach { refreshSummary(LOCAL_SOURCE, it) }
+        return items.size
+    }
+
     fun latestSnapshot(): Flow<DeviceSnapshot?> = snapshotDao.observeLatest()
 
     suspend fun latestSnapshotOnce(): DeviceSnapshot? = snapshotDao.latest()

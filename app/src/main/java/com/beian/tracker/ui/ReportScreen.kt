@@ -120,6 +120,11 @@ fun ReportScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
             }
         }
 
+        // ── 后台常驻提醒（只在未加白名单、且是本机视图时显示）──────────────
+        if (isLocal) {
+            BackgroundWarning()
+        }
+
         HorizontalDivider()
 
         // ── 事件流 ────────────────────────────────────────────────────────────

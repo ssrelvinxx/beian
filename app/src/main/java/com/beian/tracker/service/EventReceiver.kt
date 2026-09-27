@@ -48,17 +48,8 @@ class EventReceiver : BroadcastReceiver() {
             Intent.ACTION_USER_PRESENT ->
                 pending.add(EventType.UNLOCK to "TA解锁了手机")
 
-            // ── 充电插拔：瞬时的，必须靠广播，不能靠轮询 ────────────────────
-            Intent.ACTION_POWER_CONNECTED -> {
-                val pct = currentBatteryPct(context)
-                pending.add(
-                    EventType.CHARGING_START to
-                        if (pct >= 0) "TA的手机开始充电" else "TA的手机开始充电",
-                )
-            }
-
-            Intent.ACTION_POWER_DISCONNECTED ->
-                pending.add(EventType.CHARGING_STOP to "TA的手机结束充电")
+            // 充电插拔由 StaticEventReceiver（Manifest 静态注册）负责：
+            // Service 被杀掉的那段时间也能收到，这里不再重复监听。
 
             Intent.ACTION_BATTERY_CHANGED -> {
                 val pct = batteryPctFrom(intent)
@@ -169,10 +160,6 @@ class EventReceiver : BroadcastReceiver() {
             status == BatteryManager.BATTERY_STATUS_FULL
     }
 
-    /** 主动读当前电量（充电插拔广播里不带电量）。 */
-    private fun currentBatteryPct(context: Context): Int =
-        runCatching { DeviceInfo.battery(context).level }.getOrDefault(-1)
-
     companion object {
         /** 低于该电量算低电量。 */
         const val LOW_BATTERY = 20
@@ -184,18 +171,19 @@ class EventReceiver : BroadcastReceiver() {
         const val NET_DEDUP_MS = 5_000L
 
         /**
-         * 需要监听的动作。
+         * 动态注册监听的动作。
          *
-         * ⚠️ ACTION_POWER_CONNECTED / DISCONNECTED 是「充电插拔」，
-         * 必须动态注册（registerReceiver），Manifest 里静态注册收不到。
+         * ⚠️ 充电插拔（ACTION_POWER_CONNECTED / DISCONNECTED）不在这里，
+         * 它们由 [StaticEventReceiver] 在 Manifest 里静态注册 ——
+         * 这样即使 Service 被杀掉，插拔充电器也照样能记录。
+         *
+         * 屏幕开关必须动态注册：Android 不允许静态注册 ACTION_SCREEN_ON。
          */
         fun filter(): IntentFilter = IntentFilter().apply {
             addAction(Intent.ACTION_SCREEN_ON)
             addAction(Intent.ACTION_SCREEN_OFF)
             addAction(Intent.ACTION_USER_PRESENT)
             addAction(Intent.ACTION_BATTERY_CHANGED)
-            addAction(Intent.ACTION_POWER_CONNECTED)
-            addAction(Intent.ACTION_POWER_DISCONNECTED)
             addAction(android.net.ConnectivityManager.CONNECTIVITY_ACTION)
         }
     }

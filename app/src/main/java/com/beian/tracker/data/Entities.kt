@@ -1,11 +1,11 @@
 package com.beian.tracker.data
 
-/** 本机数据的来源标识。 */
-const val LOCAL_SOURCE = "LOCAL"
-
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
+
+/** 本机数据的来源标识。 */
+const val LOCAL_SOURCE = "LOCAL"
 
 /** 一条定位轨迹点。 */
 @Entity(

@@ -82,6 +82,10 @@ class TrackService : Service() {
         if (!hasLocationPermission()) return
 
         scope.launch {
+            // 断连补偿：把上次被杀掉期间漏掉的屏幕开关事件用 UsageStats 补回来。
+            // 放在最前面，让「报备」页立刻能看到完整的当天记录。
+            runCatching { repository.backfillScreenEvents() }
+
             val interval = settings.intervalSec.first()
             requestUpdates(interval)
             startTicker(interval)

@@ -205,6 +205,37 @@ object UsageStatsReader {
      * 读取今日屏幕使用时长 / 解锁次数 / 亮屏次数。
      * 无权限时返回全 0，不抛异常。
      */
+    /**
+     * 回溯某段时间内的屏幕开关事件（用于服务重启后的断连补偿）。
+     *
+     * 系统 UsageStats 会保留屏幕交互记录，即使我们的 Service 当时没在运行。
+     * 用它把断开期间漏掉的「亮屏 / 熄屏」补回事件表。
+     *
+     * @param since 起始时间戳（一般取「上一条事件的时间」）
+     * @param until 结束时间戳
+     * @return 按时间升序的 (时间戳, 是否亮屏)
+     */
+    fun screenEventsBetween(context: Context, since: Long, until: Long): List<Pair<Long, Boolean>> {
+        if (since >= until) return emptyList()
+        if (!hasPermission(context)) return emptyList()
+
+        val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+        val events = usm.queryEvents(since, until) ?: return emptyList()
+        val event = UsageEvents.Event()
+        val out = ArrayList<Pair<Long, Boolean>>()
+
+        while (events.hasNextEvent()) {
+            events.getNextEvent(event)
+            when (event.eventType) {
+                UsageEvents.Event.SCREEN_INTERACTIVE ->
+                    out.add(event.timeStamp to true)
+                UsageEvents.Event.SCREEN_NON_INTERACTIVE ->
+                    out.add(event.timeStamp to false)
+            }
+        }
+        return out.sortedBy { it.first }
+    }
+
     fun today(context: Context): ScreenUsage {
         if (!hasPermission(context)) return ScreenUsage(0, 0, 0)
 

@@ -23,6 +23,9 @@
     <!-- 开机自动恢复采集 -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
+    <!-- 后台常驻：申请加入电池优化白名单（自用侧载，非上架） -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
     <!-- 导出报备文件 / 分享 -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
 
@@ -60,6 +63,22 @@
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
+
+        <!--
+          充电插拔：静态注册，Service 被杀掉也能收到。
+          系统广播，必须 exported="true" 才能接收。
+        -->
+        <receiver
+            android:name=".service.StaticEventReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.ACTION_POWER_CONNECTED" />
+                <action android:name="android.intent.action.ACTION_POWER_DISCONNECTED" />
             </intent-filter>
         </receiver>
 

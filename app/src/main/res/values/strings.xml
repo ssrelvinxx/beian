@@ -132,4 +132,19 @@
     <string name="map_offline_tip">Tiles come from OpenStreetMap. A few hundred per person is fine — please do not bulk-scrape. Cached areas work without network.</string>
     <string name="map_offline_progress">%1$d/%2$d (%3$d%%)</string>
     <string name="map_offline_failed"> · %1$d failed</string>
+    <string name="settings_bg_title">Keep running in background</string>
+    <string name="settings_bg_desc">Without this, the system may freeze the app while the screen is off, causing gaps in the track and missing events.</string>
+    <string name="settings_bg_battery">Ignore battery optimization</string>
+    <string name="settings_bg_battery_desc">Prevents the system from putting the app to sleep</string>
+    <string name="settings_bg_battery_ok">Allowed</string>
+    <string name="settings_bg_battery_no">Not allowed</string>
+    <string name="settings_bg_battery_btn">Allow</string>
+    <string name="settings_bg_autostart">Allow auto-start</string>
+    <string name="settings_bg_autostart_desc">%1$s requires this to keep running after a restart</string>
+    <string name="settings_bg_autostart_btn">Open settings</string>
+    <string name="settings_bg_note">After granting, the screen can be off and tracking keeps working.</string>
+    <string name="settings_bg_vendor_note">%1$s has an extra background limit. Please also allow auto-start and background running in the system settings.</string>
+    <string name="bg_warn_title">Background running is limited</string>
+    <string name="bg_warn_desc">Tap to allow — otherwise the track will have gaps when the screen is off.</string>
+    <string name="bg_warn_action">Fix</string>
 </resources>

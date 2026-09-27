@@ -105,6 +105,9 @@ fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
             }
         }
 
+        // ── 后台常驻 ──────────────────────────────────────────────────────────
+        BackgroundSection()
+
         // 导出报备
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(
