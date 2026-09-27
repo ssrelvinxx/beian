@@ -6,6 +6,27 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+/**
+ * 版本号来源：优先用 gradle -PversionName=x.y.z，其次用环境变量 GIT_TAG（CI 里由 tag 提供），
+ * 最后退回默认值。versionCode 由 versionName 派生，保证单调递增。
+ */
+val appVersionName: String = run {
+    val fromProp = (project.findProperty("versionName") as String?)?.trim().orEmpty()
+    val fromEnv = System.getenv("GIT_TAG")?.trim().orEmpty()
+    val raw = fromProp.ifBlank { fromEnv }.ifBlank { "1.0.0" }
+    raw.removePrefix("v")
+}
+
+/** 1.2.3 -> 10203；保证每次发版 versionCode 都比上一个大。 */
+val appVersionCode: Int = run {
+    val parts = appVersionName.split('.', '-', '+')
+        .map { it.takeWhile { c -> c.isDigit() }.toIntOrNull() ?: 0 }
+    val major = parts.getOrElse(0) { 0 }
+    val minor = parts.getOrElse(1) { 0 }
+    val patch = parts.getOrElse(2) { 0 }
+    major * 10000 + minor * 100 + patch
+}
+
 android {
     namespace = "com.beian.tracker"
     compileSdk = 35
@@ -14,8 +35,8 @@ android {
         applicationId = "com.beian.tracker"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = appVersionCode
+        versionName = appVersionName
     }
 
     signingConfigs {
@@ -56,6 +77,15 @@ android {
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+    }
+
+    // APK 名字带上版本号，方便识别与更新
+    applicationVariants.all {
+        val variant = this
+        outputs.all {
+            val output = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
+            output.outputFileName = "huahua-${variant.versionName}-${variant.buildType.name}.apk"
         }
     }
 }

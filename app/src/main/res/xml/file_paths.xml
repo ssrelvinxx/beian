@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
+    <!-- 导出的报备数据包 -->
     <files-path name="exports" path="exports/" />
     <cache-path name="cache" path="." />
+    <!-- 下载的更新 APK -->
+    <external-files-path name="downloads" path="Download/" />
+    <external-files-path name="external_files" path="." />
 </paths>

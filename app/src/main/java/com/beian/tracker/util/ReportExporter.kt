@@ -3,6 +3,8 @@ package com.beian.tracker.util
 import android.content.Context
 import android.content.Intent
 import androidx.core.content.FileProvider
+import com.beian.tracker.data.AppSession
+import com.beian.tracker.data.AppUsage
 import com.beian.tracker.data.DeviceSnapshot
 import com.beian.tracker.data.TrackPoint
 import java.io.File
@@ -15,6 +17,8 @@ object ReportExporter {
         day: String,
         points: List<TrackPoint>,
         snapshots: List<DeviceSnapshot>,
+        appUsage: List<AppUsage>,
+        appSessions: List<AppSession>,
         distanceMeters: Double,
     ): File {
         val dir = File(context.filesDir, "exports").apply { mkdirs() }
@@ -31,6 +35,32 @@ object ReportExporter {
             sb.appendLine("屏幕使用：${TimeUtil.formatDuration(it.screenTimeMs)}")
             sb.appendLine("解锁次数：${it.unlockCount}")
             sb.appendLine("网络：${it.networkType}")
+        }
+        sb.appendLine()
+        sb.appendLine("App 使用：")
+        if (appUsage.isEmpty()) {
+            sb.appendLine("（无记录）")
+        } else {
+            appUsage.forEach { a ->
+                sb.appendLine(
+                    "${a.appLabel}  ${TimeUtil.formatDuration(a.usageMs)}  打开 ${a.launchCount} 次",
+                )
+            }
+        }
+        sb.appendLine()
+        sb.appendLine("App 打开记录：")
+        val timeline = appSessions.filter { it.durationMs >= 60_000L }
+        if (timeline.isEmpty()) {
+            sb.appendLine("（无记录）")
+        } else {
+            timeline.forEach { a ->
+                val range = if (a.endAt > 0) {
+                    "${TimeUtil.time(a.startAt)}–${TimeUtil.time(a.endAt)}"
+                } else {
+                    "${TimeUtil.time(a.startAt)}–使用中"
+                }
+                sb.appendLine("$range  ${a.appLabel}  ${TimeUtil.formatDuration(a.durationMs)}")
+            }
         }
         sb.appendLine()
         sb.appendLine("轨迹：")

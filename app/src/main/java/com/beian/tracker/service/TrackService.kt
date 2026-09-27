@@ -41,6 +41,10 @@ class TrackService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var tickerJob: Job? = null
 
+    /** 实时事件接收器（屏幕 / 电量 / 网络）。 */
+    private val eventReceiver = EventReceiver()
+    private var receiverRegistered = false
+
     private lateinit var fused: FusedLocationProviderClient
     private lateinit var repository: TrackRepository
     private lateinit var settings: SettingsStore
@@ -74,6 +78,7 @@ class TrackService : Service() {
 
     private fun startTracking() {
         startForegroundCompat()
+        registerEventReceiver()
         if (!hasLocationPermission()) return
 
         scope.launch {
@@ -107,6 +112,32 @@ class TrackService : Service() {
                 delay(intervalSec * 1000L)
             }
         }
+    }
+
+    /** 注册实时事件监听。 */
+    private fun registerEventReceiver() {
+        if (receiverRegistered) return
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                registerReceiver(eventReceiver, EventReceiver.filter(), Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                @Suppress("UnspecifiedRegisterReceiverFlag")
+                registerReceiver(eventReceiver, EventReceiver.filter())
+            }
+            receiverRegistered = true
+        } catch (_: Exception) {
+            // 注册失败不影响主流程
+        }
+    }
+
+    private fun unregisterEventReceiver() {
+        if (!receiverRegistered) return
+        try {
+            unregisterReceiver(eventReceiver)
+        } catch (_: Exception) {
+            // 忽略
+        }
+        receiverRegistered = false
     }
 
     private fun hasLocationPermission(): Boolean =
@@ -155,6 +186,7 @@ class TrackService : Service() {
         } catch (_: Exception) {
             // 忽略
         }
+        unregisterEventReceiver()
         tickerJob?.cancel()
         scope.cancel()
         super.onDestroy()

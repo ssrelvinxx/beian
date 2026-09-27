@@ -15,6 +15,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -28,6 +32,13 @@ fun HistoryScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     val summaries by vm.allSummaries.collectAsStateWithLifecycle()
     val selected by vm.selectedDay.collectAsStateWithLifecycle()
     val points by vm.todayPoints.collectAsStateWithLifecycle()
+
+    // 展开某天的时间线
+    var expandedDay by remember { mutableStateOf<String?>(null) }
+    var sessions by remember { mutableStateOf(emptyList<com.beian.tracker.data.AppSession>()) }
+    LaunchedEffect(expandedDay) {
+        sessions = expandedDay?.let { vm.appSessionsOfDayOnce(it) } ?: emptyList()
+    }
 
     Column(
         modifier = modifier
@@ -62,7 +73,10 @@ fun HistoryScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { vm.selectDay(day) }
+                            .clickable {
+                                vm.selectDay(day)
+                                expandedDay = if (expandedDay == day) null else day
+                            }
                             .padding(vertical = 10.dp),
                     ) {
                         Text(text = day, style = MaterialTheme.typography.bodyLarge)
@@ -78,6 +92,18 @@ fun HistoryScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                             Text(
                                 text = summary?.let { TimeUtil.formatDuration(it.screenTimeMs) } ?: "—",
                                 style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                        if (expandedDay == day) {
+                            Text(
+                                text = stringResource(R.string.history_app_timeline),
+                                style = MaterialTheme.typography.labelMedium,
+                                modifier = Modifier.padding(top = 8.dp),
+                            )
+                            AppTimelineList(
+                                sessions = sessions,
+                                maxItems = 50,
+                                modifier = Modifier.padding(top = 4.dp),
                             )
                         }
                     }

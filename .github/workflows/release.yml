@@ -5,6 +5,11 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号（如 1.2.0），留空则用 1.0.0'
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -28,6 +33,21 @@ jobs:
       - name: Grant execute permission
         run: chmod +x ./gradlew
 
+      # tag 推送时用 tag 名；手动触发时用输入的版本号
+      - name: Resolve version
+        id: ver
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            V="${{ github.ref_name }}"
+          elif [ -n "${{ github.event.inputs.version }}" ]; then
+            V="${{ github.event.inputs.version }}"
+          else
+            V="1.0.0"
+          fi
+          V="${V#v}"
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "Using version: $V"
+
       - name: Ensure debug keystore
         run: |
           mkdir -p ~/.android
@@ -41,19 +61,33 @@ jobs:
           fi
 
       - name: Build release APK
-        run: ./gradlew assembleRelease --no-daemon --stacktrace
+        env:
+          GIT_TAG: ${{ steps.ver.outputs.version }}
+        run: ./gradlew assembleRelease --no-daemon --stacktrace -PversionName=${{ steps.ver.outputs.version }}
 
-      - name: Rename APK
+      - name: Prepare artifact
+        id: apk
         run: |
           mkdir -p out
-          cp app/build/outputs/apk/release/*.apk out/beian.apk
+          SRC=$(find app/build/outputs/apk/release -name "*.apk" | head -n 1)
+          echo "found: $SRC"
+          cp "$SRC" "out/huahua-${{ steps.ver.outputs.version }}.apk"
           ls -la out/
+          echo "apk=out/huahua-${{ steps.ver.outputs.version }}.apk" >> "$GITHUB_OUTPUT"
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || 'edge' }}
-          name: ${{ github.ref_type == 'tag' && github.ref_name || 'latest' }}
-          files: out/beian.apk
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', steps.ver.outputs.version) }}
+          name: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', steps.ver.outputs.version) }}
+          files: ${{ steps.apk.outputs.apk }}
           generate_release_notes: true
           prerelease: ${{ github.ref_type != 'tag' }}
+          draft: false
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: huahua-apk
+          path: out/*.apk
+          if-no-files-found: error

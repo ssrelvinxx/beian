@@ -121,11 +121,15 @@ fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                     onClick = {
                         scope.launch {
                             val snapshots = vm.snapshotsOfDayOnce(day)
+                            val appUsage = vm.appUsageOfDayOnce(day)
+                            val appSessions = vm.appSessionsOfDayOnce(day)
                             val file = ReportExporter.export(
                                 context = context,
                                 day = day,
                                 points = points,
                                 snapshots = snapshots,
+                                appUsage = appUsage,
+                                appSessions = appSessions,
                                 distanceMeters = vm.totalDistance(points),
                             )
                             Toast.makeText(
@@ -146,6 +150,15 @@ fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
             }
         }
 
+        // ── 检查更新 ──────────────────────────────────────────────────────────
+        UpdateSection(vm)
+
+        // ── 关于 ──────────────────────────────────────────────────────────────
+        Text(
+            text = stringResource(R.string.settings_about, com.beian.tracker.BuildConfig.VERSION_NAME),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         Text(
             text = stringResource(R.string.settings_privacy),
             style = MaterialTheme.typography.bodySmall,

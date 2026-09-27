@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_background">#FF4A6FA5</color>
+    <!-- 图标背景：粉嫩色 -->
+    <color name="ic_launcher_background">#FFFFD9E8</color>
 </resources>

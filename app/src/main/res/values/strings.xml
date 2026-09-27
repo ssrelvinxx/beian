@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">BeiAn</string>
+    <string name="app_name">Huahua</string>
     <string name="net_cellular">Cellular</string>
     <string name="net_none">Disconnected</string>
 
@@ -30,6 +30,13 @@
     <string name="history_day_detail">Day detail</string>
 
     <string name="status_updated_at">Updated at %1$s</string>
+    <string name="status_app_usage">Screen time by app</string>
+    <string name="status_app_usage_empty">No usage data — grant usage access in Settings</string>
+    <string name="status_app_launches">%1$d opens</string>
+    <string name="status_app_timeline">App open timeline</string>
+    <string name="status_app_timeline_empty">No opens recorded yet</string>
+    <string name="status_app_timeline_running">in use now</string>
+    <string name="history_app_timeline">App opens that day</string>
     <string name="status_title">Device Status</string>
     <string name="status_battery">Battery</string>
     <string name="status_charging">Charging</string>
@@ -58,4 +65,71 @@
 
     <string name="export_done">Report exported</string>
     <string name="export_share_title">Share report</string>
+    <string name="tab_report">Report</string>
+    <string name="tab_backup">Data</string>
+    <string name="track_stat_stays">Stays</string>
+    <string name="track_stat_stay_duration">Stay time</string>
+    <string name="track_stat_distance">Distance</string>
+    <string name="track_timeline">Stay timeline</string>
+    <string name="track_timeline_empty">No stay points recorded</string>
+    <string name="track_stay_leave">Leave</string>
+    <string name="track_stay_duration">Stayed %1$s</string>
+    <string name="track_day_today">Today</string>
+    <string name="track_day_yesterday">Yesterday</string>
+    <string name="backup_title">Data exchange</string>
+    <string name="backup_my_nickname">My nickname</string>
+    <string name="backup_my_nickname_hint">Shown to the other side after they import your data</string>
+    <string name="backup_save">Save</string>
+    <string name="backup_export">Export my data</string>
+    <string name="backup_export_hint">Save a .beian file and send it to the other side via any app</string>
+    <string name="backup_export_action">Export .beian file</string>
+    <string name="backup_import">Import their data</string>
+    <string name="backup_import_hint">Pick the .beian file the other side sent you</string>
+    <string name="backup_import_action">Pick a .beian file</string>
+    <string name="backup_imported">Imported</string>
+    <string name="backup_delete">Delete</string>
+    <string name="backup_import_dialog_title">Name this data</string>
+    <string name="backup_import_dialog_hint">Enter a nickname so you can tell sources apart</string>
+    <string name="backup_import_confirm">Import</string>
+    <string name="backup_cancel">Cancel</string>
+    <string name="settings_about">Huahua %1$s · All data stays on this device</string>
+    <string name="update_section_title">Check for updates</string>
+    <string name="update_current">Current version %1$s</string>
+    <string name="update_check_btn">Check</string>
+    <string name="update_checking_btn">Checking…</string>
+    <string name="update_connecting">Connecting to GitHub…</string>
+    <string name="update_latest">Up to date (%1$s)</string>
+    <string name="update_found">New version %1$s available</string>
+    <string name="update_last_check">Last checked: %1$s</string>
+    <string name="update_auto_check">Check on launch</string>
+    <string name="update_auto_check_desc">Prompt when a new version is found</string>
+    <string name="update_prerelease">Accept pre-release builds</string>
+    <string name="update_prerelease_desc">Get beta updates</string>
+    <string name="update_dialog_title">New version %1$s</string>
+    <string name="update_dialog_current">Current: %1$s</string>
+    <string name="update_dialog_size">Package size: %1$s</string>
+    <string name="update_dialog_prerelease">⚠️ This is a pre-release build</string>
+    <string name="update_notes">Release notes</string>
+    <string name="update_no_apk">This release has no APK attached. Download it from the GitHub page.</string>
+    <string name="update_install">Download and install</string>
+    <string name="update_later">Later</string>
+    <string name="update_need_permission">Please allow installing unknown apps first</string>
+    <string name="map_offline_title">Offline map</string>
+    <string name="map_offline_stats">Cached %1$d tiles · %2$s</string>
+    <string name="map_offline_zoom">Detail: z%1$d (%2$s)</string>
+    <string name="map_offline_zoom_blocks">blocks</string>
+    <string name="map_offline_zoom_roads">roads</string>
+    <string name="map_offline_zoom_streets">streets</string>
+    <string name="map_offline_zoom_max">very fine</string>
+    <string name="map_offline_estimate">About %1$d tiles needed for the current track</string>
+    <string name="map_offline_over_limit"> (over the %1$d limit)</string>
+    <string name="map_offline_no_points">No track points on this date</string>
+    <string name="map_offline_download">Download this track area</string>
+    <string name="map_offline_clear">Clear</string>
+    <string name="map_offline_cancel">Cancel</string>
+    <string name="map_offline_only">Offline map only</string>
+    <string name="map_offline_only_desc">No map network requests. Uncached areas stay blank.</string>
+    <string name="map_offline_tip">Tiles come from OpenStreetMap. A few hundred per person is fine — please do not bulk-scrape. Cached areas work without network.</string>
+    <string name="map_offline_progress">%1$d/%2$d (%3$d%%)</string>
+    <string name="map_offline_failed"> · %1$d failed</string>
 </resources>

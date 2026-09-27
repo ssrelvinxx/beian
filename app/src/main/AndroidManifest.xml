@@ -26,6 +26,9 @@
     <!-- 导出报备文件 / 分享 -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
 
+    <!-- 检查更新：下载并安装新版 APK（仍需用户手动确认安装） -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
     <application
         android:name=".BeiAnApp"
         android:allowBackup="true"
