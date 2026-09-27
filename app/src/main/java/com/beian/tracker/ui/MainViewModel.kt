@@ -94,6 +94,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         .flatMapLatest { (s, d) -> repository.pointsOfDay(s, d) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    /** 当日各 App 使用情况（按时长降序）。 */
+    val appUsage: StateFlow<List<AppUsage>> = _selectedDay
+        .flatMapLatest { repository.appUsageOfDay(it) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     val todaySummary: StateFlow<DailySummary?> = _selectedDay
         .flatMapLatest { repository.summaryOfDay(it) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
