@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Upsert
 import kotlinx.coroutines.flow.Flow
 
@@ -95,6 +96,16 @@ interface AppUsageDao {
     @Query("DELETE FROM app_usage WHERE dayKey = :day")
     suspend fun deleteDay(day: String)
 
+    /**
+     * 用 [items] 整体替换某天的记录。
+     * 删+写在同一个事务里：中途失败会回滚，不会把当天数据清空。
+     */
+    @Transaction
+    suspend fun replaceDay(day: String, items: List<AppUsage>) {
+        deleteDay(day)
+        if (items.isNotEmpty()) upsertAll(items)
+    }
+
     @Query("DELETE FROM app_usage WHERE dayKey < :beforeDay")
     suspend fun deleteBeforeDay(beforeDay: String)
 }
@@ -113,6 +124,16 @@ interface AppSessionDao {
 
     @Query("DELETE FROM app_session WHERE dayKey = :day")
     suspend fun deleteDay(day: String)
+
+    /**
+     * 用 [items] 整体替换某天的片段记录。
+     * 删+写在同一个事务里，避免半截状态。
+     */
+    @Transaction
+    suspend fun replaceDay(day: String, items: List<AppSession>) {
+        deleteDay(day)
+        if (items.isNotEmpty()) insertAll(items)
+    }
 
     @Query("DELETE FROM app_session WHERE dayKey < :beforeDay")
     suspend fun deleteBeforeDay(beforeDay: String)
@@ -138,6 +159,10 @@ interface EventLogDao {
 
     @Query("SELECT * FROM event_log WHERE sourceId = :sourceId AND type = :type ORDER BY timestamp DESC LIMIT 1")
     suspend fun latestOfType(sourceId: String, type: String): EventLog?
+
+    /** 某天是否已存在某个类型的事件（用于「今天第 1 次打开手机」这类判定）。 */
+    @Query("SELECT COUNT(*) FROM event_log WHERE sourceId = :sourceId AND dayKey = :day AND type = :type")
+    suspend fun countOfTypeOnDay(sourceId: String, day: String, type: String): Int
 
     @Query("SELECT * FROM event_log WHERE sourceId = :sourceId ORDER BY timestamp DESC LIMIT 1")
     suspend fun latest(sourceId: String): EventLog?

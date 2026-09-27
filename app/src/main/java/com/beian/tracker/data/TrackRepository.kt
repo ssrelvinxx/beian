@@ -70,10 +70,13 @@ class TrackRepository(private val context: Context) {
         val screenOn = DeviceInfo.isScreenOn(context)
 
         // ── 各 App 当日使用情况 ────────────────────────────────────────────────
-        val perApp = UsageStatsReader.todayPerApp(context)
-        if (perApp.isNotEmpty()) {
-            appUsageDao.deleteDay(day)
-            appUsageDao.upsertAll(
+        // 注意：查询可能因为「没有权限」而返回空。此时**不能**照常替换，
+        // 否则权限一被撤销就会把当天已采到的数据清空。
+        val usageUsable = UsageStatsReader.hasPermission(context)
+        if (usageUsable) {
+            val perApp = UsageStatsReader.todayPerApp(context)
+            appUsageDao.replaceDay(
+                day,
                 perApp.map {
                     AppUsage(
                         dayKey = day,
@@ -88,10 +91,10 @@ class TrackRepository(private val context: Context) {
         }
 
         // ── 今日 App 前台片段（时间线）─────────────────────────────────────────
-        val sessions = UsageStatsReader.todaySessions(context)
-        if (sessions.isNotEmpty()) {
-            appSessionDao.deleteDay(day)
-            appSessionDao.insertAll(
+        if (usageUsable) {
+            val sessions = UsageStatsReader.todaySessions(context)
+            appSessionDao.replaceDay(
+                day,
                 sessions.map {
                     AppSession(
                         id = "${it.startAt}:${it.packageName}",
@@ -124,8 +127,12 @@ class TrackRepository(private val context: Context) {
 
         // ── 事件推导 ──────────────────────────────────────────────────────────
         val prevSnapshot = snapshotDao.latestBefore(now)
-        val firstOpenToday = eventDao.latestOfType(LOCAL_SOURCE, EventType.FIRST_OPEN_TODAY)
-            ?.dayKey == day
+        // 当天是否已经记过「第 1 次打开手机」。
+        // 广播（EventReceiver）会在亮屏时立刻写入，这里是轮询侧的兜底：
+        // 如果服务是当天启动的、又漏掉了亮屏广播，轮询会补上一条。
+        val firstOpenToday = (
+            eventDao.countOfTypeOnDay(LOCAL_SOURCE, day, EventType.FIRST_OPEN_TODAY) > 0
+            )
 
         // 上次屏幕状态：看最近一条屏幕事件
         val lastScreenEvent = eventDao.latestOfType(LOCAL_SOURCE, EventType.SCREEN_ON)

@@ -16,10 +16,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 /**
- * 实时事件接收器：监听屏幕开关、电量 / 充电、网络变化，
+ * 实时事件接收器：监听屏幕开关、充电插拔、电量、网络变化，
  * 直接写入事件表，弥补 60 秒轮询抓不到的瞬时事件。
  *
  * 在 TrackService 运行时注册（registerReceiver），随服务一起销毁。
+ *
+ * 去重原则：**按状态变化去重，而不是按时间窗**。
+ * 例如 BATTERY_LOW 只在「从 >20% 跌破到 <=20%」时记一次，
+ * 之后电量继续跌不会重复记；充电后再次跌回才会再记。
  */
 class EventReceiver : BroadcastReceiver() {
 
@@ -27,11 +31,16 @@ class EventReceiver : BroadcastReceiver() {
         val action = intent.action ?: return
         val now = System.currentTimeMillis()
         val day = TimeUtil.dayKey(now)
-        val pending = ArrayList<Pair<String, String>>() // type to title
+
+        // 本条广播直接产出的事件（type -> 文案）
+        val pending = ArrayList<Pair<String, String>>()
 
         when (action) {
-            Intent.ACTION_SCREEN_ON ->
+            Intent.ACTION_SCREEN_ON -> {
                 pending.add(EventType.SCREEN_ON to "TA打开了手机屏幕")
+                // 当天第 1 次亮屏 —— 由广播判定，比 60 秒轮询准得多
+                pending.add(EventType.FIRST_OPEN_TODAY to "TA今天第1次打开手机")
+            }
 
             Intent.ACTION_SCREEN_OFF ->
                 pending.add(EventType.SCREEN_OFF to "TA关闭了手机屏幕")
@@ -39,22 +48,28 @@ class EventReceiver : BroadcastReceiver() {
             Intent.ACTION_USER_PRESENT ->
                 pending.add(EventType.UNLOCK to "TA解锁了手机")
 
-            Intent.ACTION_BATTERY_CHANGED -> {
-                val level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
-                val scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, 100).coerceAtLeast(1)
-                val pct = if (level >= 0) level * 100 / scale else -1
-                val status = intent.getIntExtra(BatteryManager.EXTRA_STATUS, -1)
-                val charging = status == BatteryManager.BATTERY_STATUS_CHARGING ||
-                    status == BatteryManager.BATTERY_STATUS_FULL
+            // ── 充电插拔：瞬时的，必须靠广播，不能靠轮询 ────────────────────
+            Intent.ACTION_POWER_CONNECTED -> {
+                val pct = currentBatteryPct(context)
+                pending.add(
+                    EventType.CHARGING_START to
+                        if (pct >= 0) "TA的手机开始充电" else "TA的手机开始充电",
+                )
+            }
 
+            Intent.ACTION_POWER_DISCONNECTED ->
+                pending.add(EventType.CHARGING_STOP to "TA的手机结束充电")
+
+            Intent.ACTION_BATTERY_CHANGED -> {
+                val pct = batteryPctFrom(intent)
+                val charging = isChargingFrom(intent)
                 if (pct in 0..100) {
                     if (charging && pct >= 100) {
                         pending.add(EventType.BATTERY_FULL to "TA的手机电量已充满")
-                    } else if (!charging && pct <= 20) {
+                    } else if (!charging && pct <= LOW_BATTERY) {
                         pending.add(EventType.BATTERY_LOW to "TA的手机电量仅剩$pct%")
                     }
                 }
-                // 充电状态变化用快照比对，这里只处理"充满"和"低电量"两个明确事件
             }
 
             android.net.ConnectivityManager.CONNECTIVITY_ACTION -> {
@@ -80,43 +95,107 @@ class EventReceiver : BroadcastReceiver() {
         CoroutineScope(Dispatchers.IO).launch {
             val dao = AppDatabase.get(appContext).eventLogDao()
 
-            // 去重：同一类型在短时间内反复触发（如电量每降 1% 都发广播）只记一次
-            val filtered = pending.filter { (type, _) ->
-                val last = dao.latestOfType(LOCAL_SOURCE, type) ?: return@filter true
-                when (type) {
-                    // 低电量 / 充满 / 网络：10 分钟内不重复
-                    EventType.BATTERY_LOW, EventType.BATTERY_FULL,
-                    EventType.NET_WIFI, EventType.NET_CELLULAR, EventType.NET_NONE,
-                    -> now - last.timestamp > DEDUP_WINDOW_MS
-                    // 屏幕开关：1 秒内不重复
-                    else -> now - last.timestamp > 1000
+            // 状态去重：有些事件只在状态**真正发生变化**时记录一次。
+            // SCREEN_ON/OFF、UNLOCK、CHARGING_* 本身就是瞬时动作，天然不会重复，
+            // 但仍加一个极短的防重（同一秒内的重复广播）以免系统双发。
+            val items = ArrayList<EventLog>()
+            for ((type, title) in pending) {
+                val last = dao.latestOfType(LOCAL_SOURCE, type)
+
+                val keep = when (type) {
+                    // 今天第 1 次打开手机：当天已经有就不再记
+                    EventType.FIRST_OPEN_TODAY ->
+                        dao.countOfTypeOnDay(LOCAL_SOURCE, day, EventType.FIRST_OPEN_TODAY) == 0
+
+                    // 电量类：依赖状态跃迁，不做时间窗。只要上一次同类事件不是刚刚
+                    // （同一秒）产生的，就放行 —— 真正的去重交给 EventDeriver 的状态比对。
+                    EventType.BATTERY_LOW,
+                    EventType.BATTERY_FULL,
+                    -> last == null || now - last.timestamp > SAME_MOMENT_MS
+
+                    // 网络：系统切换时会连发多次广播，给一个短窗口足够。
+                    EventType.NET_WIFI,
+                    EventType.NET_CELLULAR,
+                    EventType.NET_NONE,
+                    -> last == null || now - last.timestamp > NET_DEDUP_MS
+
+                    // 充电/屏幕：瞬时动作，只防同一瞬间的双发。
+                    else -> last == null || now - last.timestamp > SAME_MOMENT_MS
+                }
+
+                if (keep) {
+                    // 「今天第 1 次打开手机」按天唯一，避免与轮询兜底重复
+                    val id = if (type == EventType.FIRST_OPEN_TODAY) {
+                        "$LOCAL_SOURCE:$type:$day"
+                    } else {
+                        "$LOCAL_SOURCE:$type:$now"
+                    }
+                    items.add(
+                        EventLog(
+                            id = id,
+                            sourceId = LOCAL_SOURCE,
+                            dayKey = day,
+                            type = type,
+                            timestamp = now,
+                            title = title,
+                        ),
+                    )
                 }
             }
 
-            val items = filtered.map { (type, title) ->
-                EventLog(
-                    id = "$LOCAL_SOURCE:$type:$now",
-                    sourceId = LOCAL_SOURCE,
-                    dayKey = day,
-                    type = type,
-                    timestamp = now,
-                    title = title,
-                )
-            }
             if (items.isNotEmpty()) dao.insertAll(items.distinctBy { it.id })
+
+            // 触发一次汇总刷新，让「报备」页立刻看到新事件
+            try {
+                com.beian.tracker.data.TrackRepository(appContext)
+                    .refreshSummary(LOCAL_SOURCE, day)
+            } catch (_: Exception) {
+                // 汇总失败不影响事件本身
+            }
         }
     }
 
-    companion object {
-        /** 同类事件的去重窗口。 */
-        const val DEDUP_WINDOW_MS = 10 * 60_000L
+    /** 从 BATTERY_CHANGED 广播里取电量百分比。 */
+    private fun batteryPctFrom(intent: Intent): Int {
+        val level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+        val scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, 100).coerceAtLeast(1)
+        return if (level >= 0) level * 100 / scale else -1
+    }
 
-        /** 需要监听的动作。 */
+    /** 从 BATTERY_CHANGED 广播里判断是否在充电。 */
+    private fun isChargingFrom(intent: Intent): Boolean {
+        val status = intent.getIntExtra(BatteryManager.EXTRA_STATUS, -1)
+        return status == BatteryManager.BATTERY_STATUS_CHARGING ||
+            status == BatteryManager.BATTERY_STATUS_FULL
+    }
+
+    /** 主动读当前电量（充电插拔广播里不带电量）。 */
+    private fun currentBatteryPct(context: Context): Int =
+        runCatching { DeviceInfo.battery(context).level }.getOrDefault(-1)
+
+    companion object {
+        /** 低于该电量算低电量。 */
+        const val LOW_BATTERY = 20
+
+        /** 同一瞬间的重复保护（防止系统双发广播）。 */
+        const val SAME_MOMENT_MS = 2_000L
+
+        /** 网络切换的合并窗口。 */
+        const val NET_DEDUP_MS = 5_000L
+
+        /**
+         * 需要监听的动作。
+         *
+         * ⚠️ ACTION_POWER_CONNECTED / DISCONNECTED 是「充电插拔」，
+         * 必须动态注册（registerReceiver），Manifest 里静态注册收不到。
+         */
         fun filter(): IntentFilter = IntentFilter().apply {
             addAction(Intent.ACTION_SCREEN_ON)
             addAction(Intent.ACTION_SCREEN_OFF)
             addAction(Intent.ACTION_USER_PRESENT)
             addAction(Intent.ACTION_BATTERY_CHANGED)
+            addAction(Intent.ACTION_POWER_CONNECTED)
+            addAction(Intent.ACTION_POWER_DISCONNECTED)
             addAction(android.net.ConnectivityManager.CONNECTIVITY_ACTION)
         }
     }

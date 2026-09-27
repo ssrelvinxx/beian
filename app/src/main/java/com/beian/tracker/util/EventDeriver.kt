@@ -2,6 +2,7 @@ package com.beian.tracker.util
 
 import com.beian.tracker.data.EventLog
 import com.beian.tracker.data.EventType
+import com.beian.tracker.data.LOCAL_SOURCE
 
 /**
  * 由「当前状态」与「上一次已知状态」的差异推导报备事件。
@@ -42,10 +43,17 @@ object EventDeriver {
         val day = TimeUtil.dayKey(now)
 
         fun add(type: String, title: String, detail: String = "", value: Long = -1L) {
+            // 「今天第 1 次打开手机」按天唯一：广播和轮询都可能产生，
+            // 用固定 id + REPLACE 保证当天只有一条。
+            val id = if (type == EventType.FIRST_OPEN_TODAY) {
+                "$LOCAL_SOURCE:$type:$day"
+            } else {
+                "$LOCAL_SOURCE:$type:$now"
+            }
             out.add(
                 EventLog(
-                    id = "LOCAL:$type:$now",
-                    sourceId = "LOCAL",
+                    id = id,
+                    sourceId = LOCAL_SOURCE,
                     dayKey = day,
                     type = type,
                     timestamp = now,
@@ -95,9 +103,11 @@ object EventDeriver {
         }
 
         // ── 屏幕 ────────────────────────────────────────────────────────────
-        // 屏幕开关由 EventReceiver 实时监听写入，这里只兜底「今天第 1 次打开手机」，
-        // 避免轮询与广播重复产生 SCREEN_ON。
-        if (screenOn && !prev.screenOn && !prev.firstOpenToday) {
+        // 屏幕开关由 EventReceiver 实时监听写入。
+        // 「今天第 1 次打开手机」正常情况下也由广播在亮屏瞬间写入；
+        // 这里只在「当前屏幕亮着 + 当天还没有这条记录」时兜底，
+        // 覆盖服务当天启动较晚、漏掉那次亮屏广播的情况。
+        if (screenOn && !prev.firstOpenToday) {
             add(EventType.FIRST_OPEN_TODAY, "TA今天第1次打开手机")
         }
 
