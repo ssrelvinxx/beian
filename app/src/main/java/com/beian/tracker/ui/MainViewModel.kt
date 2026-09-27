@@ -4,6 +4,7 @@ import android.app.Application
 import android.location.Location
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.beian.tracker.data.AppUsage
 import com.beian.tracker.data.DailySummary
 import com.beian.tracker.data.DeviceSnapshot
 import com.beian.tracker.data.TrackPoint
@@ -30,6 +31,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     val todayPoints: StateFlow<List<TrackPoint>> = _selectedDay
         .flatMapLatest { repository.pointsOfDay(it) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** 当日各 App 使用情况（按时长降序）。 */
+    val appUsage: StateFlow<List<AppUsage>> = _selectedDay
+        .flatMapLatest { repository.appUsageOfDay(it) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val todaySummary: StateFlow<DailySummary?> = _selectedDay
@@ -69,6 +75,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** 取某天的设备快照（导出报备用）。 */
     suspend fun snapshotsOfDayOnce(day: String): List<DeviceSnapshot> =
         repository.snapshotsOfDay(day).first()
+
+    /** 取某天的各 App 使用情况（导出报备用）。 */
+    suspend fun appUsageOfDayOnce(day: String): List<AppUsage> =
+        repository.appUsageOfDayOnce(day)
 
     fun selectDay(day: String) {
         _selectedDay.value = day
