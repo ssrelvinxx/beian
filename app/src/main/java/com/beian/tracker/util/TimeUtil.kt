@@ -39,6 +39,16 @@ object TimeUtil {
         }
     }
 
+    /**
+     * 短时长格式化，秒级精度 —— 用于「用了多久」这类不超过几分钟的场景。
+     * 与 [formatDuration] 的区别：后者最小单位是分钟，30 秒会显示成 "0分"。
+     */
+    fun formatShortDuration(ms: Long): String = when {
+        ms < 60_000 -> "${(ms / 1000).coerceAtLeast(1)}秒"
+        ms < 60 * 60_000 -> "${ms / 60_000}分"
+        else -> formatDuration(ms)
+    }
+
     /** 把米格式化为 "1.2km" / "350m"。 */
     fun formatDistance(meters: Double): String = when {
         meters >= 1000 -> String.format(Locale.US, "%.2f km", meters / 1000)

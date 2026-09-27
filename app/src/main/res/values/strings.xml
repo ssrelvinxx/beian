@@ -141,4 +141,9 @@
     <string name="bg_warn_title">Background running is limited</string>
     <string name="bg_warn_desc">Tap to allow — otherwise the track will have gaps when the screen is off.</string>
     <string name="bg_warn_action">Fix</string>
+    <string name="report_app_usage">App usage today</string>
+    <string name="report_app_usage_total">Total %1$s</string>
+    <string name="report_app_usage_empty">No data yet — grant "Usage access" in Settings</string>
+    <string name="report_app_usage_more">Show %1$d more</string>
+    <string name="report_app_usage_less">Show less</string>
 </resources>

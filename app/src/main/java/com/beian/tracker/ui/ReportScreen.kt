@@ -125,6 +125,12 @@ fun ReportScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
             BackgroundWarning()
         }
 
+        // ── 今日 App 使用排行（只在本机视图显示；导入的数据包里没有这项）──────
+        // 放在事件流上方、默认只显示前 3 个，避免把事件流挤下去。
+        if (isLocal) {
+            AppUsageSection(vm)
+        }
+
         HorizontalDivider()
 
         // ── 事件流 ────────────────────────────────────────────────────────────

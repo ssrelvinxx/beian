@@ -13,6 +13,7 @@ import com.beian.tracker.data.ImportedSource
 import com.beian.tracker.data.LOCAL_SOURCE
 import com.beian.tracker.data.TrackPoint
 import com.beian.tracker.data.TrackRepository
+import com.beian.tracker.util.AppEventDeriver
 import com.beian.tracker.util.BackupCodec
 import com.beian.tracker.util.EventDedup
 import com.beian.tracker.util.MapTileStore
@@ -117,9 +118,34 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     // ── App 使用 ──────────────────────────────────────────────────────────────
 
+    /**
+     * 本应用包名，用于在 App 排行 / 事件里排除自己。
+     *
+     * 直接用构造参数 app（而不是 getApplication()）：类属性按声明顺序初始化，
+     * 这里定义在 reportableAppUsage 之前，用构造参数能确保一定已就绪。
+     */
+    private val selfPackageName: String = app.packageName
+
     val appUsage: StateFlow<List<AppUsage>> = _selectedDay
         .flatMapLatest { repository.appUsageOfDay(it) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /**
+     * 报备页要展示的 App 使用排行。
+     *
+     * 原始 app_usage 里含桌面、系统 UI（它们也能进入前台），
+     * 展示时必须滤掉，否则排行第一永远是「桌面」。
+     * 用 [AppEventDeriver.isReportable] 与事件流保持同一套规则。
+     */
+    val reportableAppUsage: StateFlow<List<AppUsage>> = _selectedDay
+        .flatMapLatest { repository.appUsageOfDay(it) }
+        .map { list ->
+            list.filter { AppEventDeriver.isReportable(it.packageName, selfPackageName) }
+                .filter { it.usageMs > 0 }
+                .sortedByDescending { it.usageMs }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
 
     val appSessions: StateFlow<List<AppSession>> = _selectedDay
         .flatMapLatest { repository.appSessionsOfDay(it) }

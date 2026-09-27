@@ -2,6 +2,7 @@ package com.beian.tracker.data
 
 import android.content.Context
 import android.location.Location
+import com.beian.tracker.util.AppEventDeriver
 import com.beian.tracker.util.BackupCodec
 import com.beian.tracker.util.DeviceInfo
 import com.beian.tracker.util.EventDeriver
@@ -90,7 +91,7 @@ class TrackRepository(private val context: Context) {
             )
         }
 
-        // ── 今日 App 前台片段（时间线）─────────────────────────────────────────
+        // ── 今日 App 前台片段（时间线 + 报备事件）──────────────────────────────
         if (usageUsable) {
             val sessions = UsageStatsReader.todaySessions(context)
             appSessionDao.replaceDay(
@@ -107,6 +108,23 @@ class TrackRepository(private val context: Context) {
                     )
                 },
             )
+
+            // 同一批片段转成「TA 打开了 XX」事件，写进报备流。
+            //
+            // ⚠️ 性能：UsageStats 每天会还原出上百个片段，而轮询每 60 秒跑一次。
+            // 如果每次都全量 insertAll，一天要写十几万次（内容还都一样）。
+            // 所以先查「已记到哪个时间点」，只处理它之后的片段。
+            //
+            // 会话的 startAt 是事件时间戳，天然有序，取历史最大值即可。
+            val lastAppOpenAt = eventDao.latestOfType(LOCAL_SOURCE, EventType.APP_OPEN)?.timestamp ?: 0L
+            val fresh = sessions.filter { it.startAt > lastAppOpenAt }
+            if (fresh.isNotEmpty()) {
+                val appEvents = AppEventDeriver.derive(
+                    sessions = fresh,
+                    selfPackage = context.packageName,
+                )
+                if (appEvents.isNotEmpty()) eventDao.insertAll(appEvents)
+            }
         }
 
         // ── 快照 ──────────────────────────────────────────────────────────────

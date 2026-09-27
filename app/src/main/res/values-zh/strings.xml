@@ -141,4 +141,9 @@
     <string name="bg_warn_title">后台运行受限</string>
     <string name="bg_warn_desc">点此授权，否则息屏后轨迹会断点、事件会丢。</string>
     <string name="bg_warn_action">去修复</string>
+    <string name="report_app_usage">今日 App 使用</string>
+    <string name="report_app_usage_total">共 %1$s</string>
+    <string name="report_app_usage_empty">暂无数据 — 请在设置里授予「使用情况访问」</string>
+    <string name="report_app_usage_more">展开其余 %1$d 个</string>
+    <string name="report_app_usage_less">收起</string>
 </resources>
