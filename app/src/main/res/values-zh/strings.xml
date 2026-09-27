@@ -30,6 +30,9 @@
     <string name="history_day_detail">当日详情</string>
 
     <string name="status_updated_at">更新于 %1$s</string>
+    <string name="status_app_usage">今日 App 使用</string>
+    <string name="status_app_usage_empty">暂无数据 — 请在设置里授予「使用情况访问」</string>
+    <string name="status_app_launches">打开 %1$d 次</string>
     <string name="status_title">设备状态</string>
     <string name="status_battery">电量</string>
     <string name="status_charging">充电中</string>
