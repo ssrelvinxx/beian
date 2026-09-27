@@ -68,8 +68,14 @@ object UpdateChecker {
             val current = currentVersion
             // 预发布版只在明确允许时才纳入比较
             val candidates = releases.filter { includePrerelease || !it.prerelease }
-            val latest = candidates.maxByOrNull { parseVersion(it.version) }
-                ?: return@withContext Result.Failed("没有可用的正式版本")
+            if (candidates.isEmpty()) {
+                return@withContext Result.Failed("没有可用的正式版本")
+            }
+            // 版本号是 "a.b.c" 形式，逐段比较；不能用 maxByOrNull(parseVersion)，
+            // 因为 List<Int> 不是 Comparable。
+            val latest = candidates.reduce { a, b ->
+                if (compareVersion(a.version, b.version) >= 0) a else b
+            }
 
             if (compareVersion(latest.version, current) > 0) {
                 Result.Update(latest, current)

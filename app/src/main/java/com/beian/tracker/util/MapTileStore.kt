@@ -31,8 +31,8 @@ object MapTileStore {
             userAgentValue = context.packageName
             osmdroidBasePath = baseDir(context)
             osmdroidTileCache = tileCacheDir(context)
-            // 允许在磁盘缓存命中时离线渲染；无网且无缓存时 osmdroid 会显示空白瓦片
-            setAccessPolicy(true)
+            // 磁盘缓存命中时直接用本地瓦片渲染，无网也不会清空已有缓存
+            loadMapsFromCache = true
         }
     }
 

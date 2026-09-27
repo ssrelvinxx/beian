@@ -162,6 +162,8 @@ fun UpdateSection(vm: MainViewModel) {
     // ── 新版本弹窗 ────────────────────────────────────────────────────────────
     available?.let { s ->
         val info = s.info
+        // 在 Composable 上下文先取出字符串：onClick 里不能调 stringResource
+        val needPermissionText = stringResource(R.string.update_need_permission)
         AlertDialog(
             onDismissRequest = { vm.dismissUpdate() },
             title = { Text(stringResource(R.string.update_dialog_title, info.version)) },
@@ -219,7 +221,7 @@ fun UpdateSection(vm: MainViewModel) {
                         if (!ApkInstaller.canInstall(context)) {
                             Toast.makeText(
                                 context,
-                                stringResource(R.string.update_need_permission),
+                                needPermissionText,
                                 Toast.LENGTH_LONG,
                             ).show()
                             ApkInstaller.openInstallPermissionSettings(context)
