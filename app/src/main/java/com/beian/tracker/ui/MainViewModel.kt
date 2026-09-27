@@ -17,24 +17,25 @@ import com.beian.tracker.util.AppEventDeriver
 import com.beian.tracker.util.BackupCodec
 import com.beian.tracker.util.EventDedup
 import com.beian.tracker.util.MapTileStore
-import com.beian.tracker.util.TileDownloader
-import com.beian.tracker.util.UpdateChecker
 import com.beian.tracker.util.SettingsStore
+import com.beian.tracker.util.TileDownloader
 import com.beian.tracker.util.TimeUtil
+import com.beian.tracker.util.UpdateChecker
+import com.beian.tracker.util.UsageStatsReader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** 已缓存的离线瓦片统计。 */
 data class TileStats(
@@ -59,6 +60,13 @@ sealed interface UpdateUiState {
     data class Error(val reason: String) : UpdateUiState
 }
 
+/**
+ * 只读探测用的临时 sourceId —— 不落库，仅为了让 decode 产出合法结构。
+ *
+ * 必须是顶层常量：const val 不允许写在普通类体内。
+ */
+private const val PROBE_SOURCE_ID = "PROBE"
+
 class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private val repository = TrackRepository(app)
@@ -72,11 +80,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * 当前查看的来源：LOCAL 是本机，其余是导入的对方数据。
      * 顶部可切换。
      */
-    /**
-     * 只读探测用的临时 sourceId —— 不落库，仅为了让 decode 产出合法结构。
-     */
-    private const val PROBE_SOURCE_ID = "PROBE"
-
     private val _sourceId = MutableStateFlow(LOCAL_SOURCE)
     val sourceId: StateFlow<String> = _sourceId.asStateFlow()
 
@@ -155,6 +158,23 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val appSessions: StateFlow<List<AppSession>> = _selectedDay
         .flatMapLatest { repository.appSessionsOfDay(it) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /**
+     * 是否已授予「使用情况访问」。
+     *
+     * UI 需要它来区分「没权限」和「今天确实没用过 App」——
+     * 前者必须给出引导，否则用户装了新版却看不到排行，也不知道为什么。
+     *
+     * 授权在系统设置里完成，回来时 ViewModel 不会重建，
+     * 所以光靠初始化读一次是不够的 —— 界面回到前台时要调 [refreshUsageAccess]。
+     */
+    private val _hasUsageAccess = MutableStateFlow(UsageStatsReader.hasPermission(app))
+    val hasUsageAccess: StateFlow<Boolean> = _hasUsageAccess.asStateFlow()
+
+    /** 重新读取「使用情况访问」权限状态。界面 ON_RESUME 时调用。 */
+    fun refreshUsageAccess() {
+        _hasUsageAccess.value = UsageStatsReader.hasPermission(getApplication())
+    }
 
     // ── 本机状态 ──────────────────────────────────────────────────────────────
 

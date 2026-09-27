@@ -21,9 +21,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.beian.tracker.R
@@ -42,7 +42,37 @@ private const val COLLAPSED_COUNT = 3
 @Composable
 fun AppUsageSection(vm: MainViewModel, modifier: Modifier = Modifier) {
     val usage by vm.reportableAppUsage.collectAsStateWithLifecycle()
+    val hasAccess by vm.hasUsageAccess.collectAsStateWithLifecycle()
 
+    // 没权限：必须给出引导。
+    // 之前这里直接 return，用户装了新版、忘了授权，
+    // 报备页会「什么都没有」且毫无提示，根本不知道该去授权。
+    if (!hasAccess) {
+        Card(
+            modifier = modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+        ) {
+            Column(
+                modifier = Modifier.padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.report_app_usage),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    text = stringResource(R.string.report_app_usage_empty),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        return
+    }
+
+    // 有权限但今天没用过 App：这是正常状态，不必占位，静默隐藏
     if (usage.isEmpty()) return
 
     var expanded by rememberSaveable { mutableStateOf(false) }

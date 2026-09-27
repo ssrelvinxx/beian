@@ -7,9 +7,9 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DateRange
-import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Today
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -17,15 +17,19 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.beian.tracker.R
 
@@ -58,6 +62,17 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
     val autoCheck by vm.autoCheckUpdate.collectAsStateWithLifecycle()
     LaunchedEffect(autoCheck) {
         if (autoCheck) vm.checkUpdate(silent = true)
+    }
+
+    // 「使用情况访问」是在系统设置里授权的，回来时 ViewModel 不会重建，
+    // 不主动重读的话，用户授权完仍然看到「未授权」提示。
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) vm.refreshUsageAccess()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     Scaffold(
