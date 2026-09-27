@@ -18,9 +18,20 @@ android {
         versionName = "1.0.0"
     }
 
+    signingConfigs {
+        // 用 debug 签名，保证 release APK 可直接安装（本地自用，非上架）
+        create("shared") {
+            storeFile = file(System.getProperty("user.home") + "/.android/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("shared")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
         debug {
