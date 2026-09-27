@@ -15,6 +15,7 @@ class TrackRepository(private val context: Context) {
     private val pointDao = db.trackPointDao()
     private val snapshotDao = db.deviceSnapshotDao()
     private val summaryDao = db.dailySummaryDao()
+    private val appUsageDao = db.appUsageDao()
 
     // ── 轨迹点 ────────────────────────────────────────────────────────────────
 
@@ -53,6 +54,24 @@ class TrackRepository(private val context: Context) {
         val network = DeviceInfo.network(context)
         val usage = UsageStatsReader.today(context)
 
+        // 各 App 当日使用情况（整体覆盖当天数据，保持最新）
+        val perApp = UsageStatsReader.todayPerApp(context)
+        if (perApp.isNotEmpty()) {
+            appUsageDao.deleteDay(day)
+            appUsageDao.upsertAll(
+                perApp.map {
+                    AppUsage(
+                        dayKey = day,
+                        packageName = it.packageName,
+                        appLabel = it.appLabel,
+                        usageMs = it.usageMs,
+                        launchCount = it.launchCount,
+                        lastUsed = it.lastUsed,
+                    )
+                },
+            )
+        }
+
         snapshotDao.insert(
             DeviceSnapshot(
                 timestamp = now,
@@ -75,6 +94,12 @@ class TrackRepository(private val context: Context) {
     suspend fun latestSnapshotOnce(): DeviceSnapshot? = snapshotDao.latest()
 
     fun snapshotsOfDay(day: String): Flow<List<DeviceSnapshot>> = snapshotDao.observeByDay(day)
+
+    // ── 各 App 使用情况 ───────────────────────────────────────────────────────
+
+    fun appUsageOfDay(day: String): Flow<List<AppUsage>> = appUsageDao.observeByDay(day)
+
+    suspend fun appUsageOfDayOnce(day: String): List<AppUsage> = appUsageDao.getByDay(day)
 
     // ── 汇总 ──────────────────────────────────────────────────────────────────
 
@@ -119,5 +144,6 @@ class TrackRepository(private val context: Context) {
         val cutoff = System.currentTimeMillis() - days * 24L * 3600_000
         pointDao.deleteOlderThan(cutoff)
         snapshotDao.deleteOlderThan(cutoff)
+        appUsageDao.deleteBeforeDay(TimeUtil.dayKey(cutoff))
     }
 }
