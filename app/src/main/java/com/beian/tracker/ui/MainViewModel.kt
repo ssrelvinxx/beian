@@ -14,6 +14,7 @@ import com.beian.tracker.data.LOCAL_SOURCE
 import com.beian.tracker.data.TrackPoint
 import com.beian.tracker.data.TrackRepository
 import com.beian.tracker.util.BackupCodec
+import com.beian.tracker.util.EventDedup
 import com.beian.tracker.util.MapTileStore
 import com.beian.tracker.util.TileDownloader
 import com.beian.tracker.util.UpdateChecker
@@ -24,6 +25,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
@@ -83,9 +85,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         .flatMapLatest { (s, d) -> repository.eventsOfDay(s, d) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    /** 当前来源最近的事件（不限当天，用于报备页连续滚动）。 */
+    /**
+     * 当前来源最近的事件（不限当天，用于报备页连续滚动）。
+     *
+     * 经过 [EventDedup.collapse] 折叠：数据库里如实记录了每次亮屏/熄屏，
+     * 但直接铺在聊天流里会刷屏（一晚上瞄几次时间就是十几条）。
+     * 折叠只影响显示，不动数据库。
+     */
     val recentEvents: StateFlow<List<EventLog>> = _sourceId
         .flatMapLatest { repository.recentEvents(it, 300) }
+        .map { EventDedup.collapse(it) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     // ── 轨迹 ──────────────────────────────────────────────────────────────────
