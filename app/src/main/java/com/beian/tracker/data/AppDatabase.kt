@@ -6,8 +6,8 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 
 @Database(
-    entities = [TrackPoint::class, DeviceSnapshot::class, DailySummary::class],
-    version = 1,
+    entities = [TrackPoint::class, DeviceSnapshot::class, DailySummary::class, AppUsage::class],
+    version = 2,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -16,6 +16,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun deviceSnapshotDao(): DeviceSnapshotDao
 
     abstract fun dailySummaryDao(): DailySummaryDao
+
+    abstract fun appUsageDao(): AppUsageDao
 
     companion object {
         @Volatile
