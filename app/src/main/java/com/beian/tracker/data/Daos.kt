@@ -206,7 +206,7 @@ interface EventLogDao {
     )
     suspend fun latestOfTypes(sourceId: String, types: List<String>): EventLog?
 
-    /** 某天是否已存在某个类型的事件（用于「今天第 1 次打开手机」这类判定）。 */
+    /** 某天是否已存在某个类型的事件（用于「今天第 1 次点亮屏幕」这类判定）。 */
     @Query("SELECT COUNT(*) FROM event_log WHERE sourceId = :sourceId AND dayKey = :day AND type = :type")
     suspend fun countOfTypeOnDay(sourceId: String, day: String, type: String): Int
 

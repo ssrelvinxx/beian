@@ -42,7 +42,7 @@ class EventReceiver : BroadcastReceiver() {
             Intent.ACTION_SCREEN_ON -> {
                 pending.add(EventType.SCREEN_ON to "TA打开了手机屏幕")
                 // 当天第 1 次亮屏 —— 由广播判定，比 60 秒轮询准得多
-                pending.add(EventType.FIRST_OPEN_TODAY to "TA今天第1次打开手机")
+                pending.add(EventType.FIRST_OPEN_TODAY to "TA今天第1次点亮了屏幕")
             }
 
             Intent.ACTION_SCREEN_OFF ->
@@ -100,7 +100,7 @@ class EventReceiver : BroadcastReceiver() {
                 val last = dao.latestOfType(LOCAL_SOURCE, type)
 
                 val keep = when (type) {
-                    // 今天第 1 次打开手机：当天已经有就不再记
+                    // 今天第 1 次点亮屏幕：当天已经有就不再记
                     EventType.FIRST_OPEN_TODAY ->
                         dao.countOfTypeOnDay(LOCAL_SOURCE, day, EventType.FIRST_OPEN_TODAY) == 0
 
@@ -154,7 +154,7 @@ class EventReceiver : BroadcastReceiver() {
                 }
 
                 if (keep) {
-                    // 「今天第 1 次打开手机」按天唯一，避免与轮询兜底重复
+                    // 「今天第 1 次点亮屏幕」按天唯一，避免与轮询兜底重复
                     val id = if (type == EventType.FIRST_OPEN_TODAY) {
                         "$LOCAL_SOURCE:$type:$day"
                     } else {

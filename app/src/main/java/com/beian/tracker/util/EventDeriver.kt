@@ -43,7 +43,7 @@ object EventDeriver {
         val day = TimeUtil.dayKey(now)
 
         fun add(type: String, title: String, detail: String = "", value: Long = -1L) {
-            // 「今天第 1 次打开手机」按天唯一：广播和轮询都可能产生，
+            // 「今天第 1 次点亮屏幕」按天唯一：广播和轮询都可能产生，
             // 用固定 id + REPLACE 保证当天只有一条。
             val id = if (type == EventType.FIRST_OPEN_TODAY) {
                 "$LOCAL_SOURCE:$type:$day"
@@ -81,12 +81,12 @@ object EventDeriver {
 
         // ── 屏幕 ────────────────────────────────────────────────────────────
         // 屏幕开关由 EventReceiver 实时监听写入。
-        // 「今天第 1 次打开手机」正常情况下也由广播在亮屏瞬间写入；
+        // 「今天第 1 次点亮屏幕」正常情况下也由广播在亮屏瞬间写入；
         // 这里只在「当前屏幕亮着 + 当天还没有这条记录」时兜底，
         // 覆盖服务当天启动较晚、漏掉那次亮屏广播的情况。
         // 该事件用「按天固定 id」，所以广播与轮询不会产生两条。
         if (screenOn && !prev.firstOpenToday) {
-            add(EventType.FIRST_OPEN_TODAY, "TA今天第1次打开手机")
+            add(EventType.FIRST_OPEN_TODAY, "TA今天第1次点亮了屏幕")
         }
 
         return out

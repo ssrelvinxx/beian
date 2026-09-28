@@ -241,7 +241,7 @@ private fun EventBubble(event: EventLog, fromMe: Boolean) {
 
 /** 事件类型 → emoji 图标。 */
 private fun iconOf(type: String): String = when (type) {
-    "FIRST_OPEN_TODAY" -> "🔒"
+    "FIRST_OPEN_TODAY" -> "💡"
     "SCREEN_ON" -> "📱"
     "SCREEN_OFF" -> "🌙"
     "UNLOCK" -> "🔓"

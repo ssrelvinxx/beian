@@ -145,7 +145,7 @@ class TrackRepository(private val context: Context) {
 
         // ── 事件推导 ──────────────────────────────────────────────────────────
         val prevSnapshot = snapshotDao.latestBefore(now)
-        // 当天是否已经记过「第 1 次打开手机」。
+        // 当天是否已经记过「第 1 次点亮屏幕」。
         // 广播（EventReceiver）会在亮屏时立刻写入，这里是轮询侧的兜底：
         // 如果服务是当天启动的、又漏掉了亮屏广播，轮询会补上一条。
         val firstOpenToday = (
@@ -266,7 +266,7 @@ class TrackRepository(private val context: Context) {
     fun eventDays(sourceId: String): Flow<List<String>> = eventDao.observeDays(sourceId)
 
     /**
-     * 本机某天第 1 次打开手机的时间，用于报备页顶部展示。
+     * 本机某天第 1 次点亮屏幕的时间，用于报备页顶部展示。
      * 没有记录时返回 null。
      */
     suspend fun firstOpenOfDay(day: String): Long? =
