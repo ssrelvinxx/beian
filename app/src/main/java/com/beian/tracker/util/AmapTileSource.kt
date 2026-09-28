@@ -45,7 +45,10 @@ class AmapTileSource : OnlineTileSourceBase(
     MAX_ZOOM,   // maxZoom
     256,        // tileSizePx
     ".png",     // 扩展名
-    *BASE_URLS, // 子域轮换：单域名并发容易被限流
+    // ⚠️ 不能用 *BASE_URLS 展开：OnlineTileSourceBase 这个参数是 String[]
+    //    而不是 vararg，编译器会报「spread operator can only be applied
+    //    in a vararg position」。直接传数组。
+    BASE_URLS, // 子域轮换：单域名并发容易被限流
 ) {
     override fun getTileURLString(pMapTileIndex: Long): String = amapTileUrl(
         z = MapTileIndex.getZoom(pMapTileIndex),
