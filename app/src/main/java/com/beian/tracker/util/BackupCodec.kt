@@ -2,8 +2,8 @@ package com.beian.tracker.util
 
 import com.beian.tracker.data.AppSession
 import com.beian.tracker.data.AppUsage
-import com.beian.tracker.data.EventLog
 import com.beian.tracker.data.DeviceSnapshot
+import com.beian.tracker.data.EventLog
 import com.beian.tracker.data.TrackPoint
 import org.json.JSONArray
 import org.json.JSONObject
@@ -226,6 +226,9 @@ object BackupCodec {
                     DeviceSnapshot(
                         timestamp = o.optLong("t"),
                         dayKey = o.optString("d"),
+                        // 必须用解析后的 sourceId（含 override），
+                        // 用默认值的话对方快照会带着 LOCAL 混进本机视图。
+                        sourceId = sourceId,
                         batteryLevel = o.optInt("bat"),
                         batteryCharging = o.optBoolean("chg"),
                         screenTimeMs = o.optLong("scr"),

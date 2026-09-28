@@ -3,8 +3,8 @@ package com.beian.tracker.util
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
-import org.osmdroid.config.Configuration
 import java.io.File
+import org.osmdroid.config.Configuration
 
 /**
  * 地图瓦片的离线存储管理。

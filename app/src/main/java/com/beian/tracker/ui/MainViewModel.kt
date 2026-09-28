@@ -178,7 +178,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     // ── 本机状态 ──────────────────────────────────────────────────────────────
 
-    val latestSnapshot = repository.latestSnapshot()
+    /**
+     * 当前来源最近的一条快照。
+     *
+     * 必须跟着 [_sourceId] 走：之前固定查本机，
+     * 切到对方后顶部还在显示本机的电量和网络。
+     */
+    val latestSnapshot: StateFlow<DeviceSnapshot?> = _sourceId
+        .flatMapLatest { repository.latestSnapshot(it) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     val trackingEnabled: StateFlow<Boolean> = settings.trackingEnabled

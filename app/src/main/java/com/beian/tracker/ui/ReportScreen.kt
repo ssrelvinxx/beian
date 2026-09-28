@@ -25,6 +25,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -87,26 +88,31 @@ fun ReportScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                     )
                 }
                 Spacer(Modifier.size(4.dp))
+                // 电量 / 网络：本机与对方都显示。
+                // 之前只在 isLocal 分支渲染，切到对方后这一行整个空掉，
+                // 看起来就像「切换没生效」。
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    if (isLocal) {
-                        snapshot?.let {
-                            Text(
-                                text = "🔋 ${it.batteryLevel}%",
-                                style = MaterialTheme.typography.bodySmall,
-                            )
-                            Text(
-                                text = when {
-                                    it.batteryCharging -> "⚡ 充电中"
-                                    else -> "未充电"
-                                },
-                                style = MaterialTheme.typography.bodySmall,
-                            )
-                            Text(
-                                text = "📶 ${networkLabel(it.networkType, it.networkName)}",
-                                style = MaterialTheme.typography.bodySmall,
-                            )
-                        }
-                    } else {
+                    snapshot?.let {
+                        Text(
+                            text = "🔋 ${it.batteryLevel}%",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        Text(
+                            text = when {
+                                it.batteryCharging -> "⚡ 充电中"
+                                else -> "未充电"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        Text(
+                            text = "📶 ${networkLabel(it.networkType, it.networkName)}",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
+                // 对方数据额外标出覆盖的日期范围
+                if (!isLocal) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         val src = sources.firstOrNull { it.sourceId == sourceId }
                         src?.let {
                             Text(
@@ -125,10 +131,21 @@ fun ReportScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
             BackgroundWarning()
         }
 
-        // ── 今日 App 使用排行（只在本机视图显示；导入的数据包里没有这项）──────
+        // ── 今日 App 使用排行 ─────────────────────────────────────────────────
         // 放在事件流上方、默认只显示前 3 个，避免把事件流挤下去。
+        //
+        // 对方的导入包里不含 App 使用数据（导出时就没打包这项），
+        // 所以这里给出明确说明，而不是让整块静默消失 ——
+        // 静默消失会让人以为「切换没生效」。
         if (isLocal) {
             AppUsageSection(vm)
+        } else {
+            Text(
+                text = stringResource(R.string.report_peer_no_app_usage),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+            )
         }
 
         HorizontalDivider()

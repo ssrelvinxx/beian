@@ -2,12 +2,12 @@ package com.beian.tracker.util
 
 import android.os.Build
 import com.beian.tracker.BuildConfig
+import java.net.HttpURLConnection
+import java.net.URL
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
-import java.net.HttpURLConnection
-import java.net.URL
 
 /**
  * 检查更新：读取本仓库的 GitHub Releases，与当前版本比对。

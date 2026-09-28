@@ -52,6 +52,15 @@ interface DeviceSnapshotDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insert(snapshot: DeviceSnapshot): Long
 
+    /**
+     * 批量插入（导入对方数据包时用）。
+     *
+     * 用 REPLACE：导入包里带着采集端的自增 id，和本机的会撞。
+     * 调用方在入队前已把 id 归零，让本库重新分配。
+     */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(items: List<DeviceSnapshot>)
+
     @Query("SELECT * FROM device_snapshots WHERE dayKey = :day ORDER BY timestamp DESC")
     fun observeByDay(day: String): Flow<List<DeviceSnapshot>>
 
@@ -61,8 +70,18 @@ interface DeviceSnapshotDao {
     @Query("SELECT * FROM device_snapshots ORDER BY timestamp DESC LIMIT 1")
     suspend fun latest(): DeviceSnapshot?
 
+    /** 某个来源最近的一条快照（报备页顶部信息栏按来源显示）。 */
+    @Query(
+        "SELECT * FROM device_snapshots WHERE sourceId = :sourceId " +
+            "ORDER BY timestamp DESC LIMIT 1",
+    )
+    fun observeLatestOf(sourceId: String): Flow<DeviceSnapshot?>
+
     @Query("SELECT * FROM device_snapshots WHERE timestamp < :before ORDER BY timestamp DESC LIMIT 1")
     suspend fun latestBefore(before: Long): DeviceSnapshot?
+
+    @Query("DELETE FROM device_snapshots WHERE sourceId = :sourceId")
+    suspend fun deleteSource(sourceId: String)
 
     @Query("SELECT * FROM device_snapshots WHERE dayKey = :day ORDER BY timestamp ASC")
     suspend fun getByDay(day: String): List<DeviceSnapshot>

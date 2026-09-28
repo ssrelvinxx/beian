@@ -230,7 +230,9 @@ class TrackRepository(private val context: Context) {
         return items.size
     }
 
-    fun latestSnapshot(): Flow<DeviceSnapshot?> = snapshotDao.observeLatest()
+    /** 某个来源最近的一条快照。报备页顶部信息栏用它按来源切换显示。 */
+    fun latestSnapshot(sourceId: String = LOCAL_SOURCE): Flow<DeviceSnapshot?> =
+        snapshotDao.observeLatestOf(sourceId)
 
     suspend fun latestSnapshotOnce(): DeviceSnapshot? = snapshotDao.latest()
 
@@ -281,6 +283,7 @@ class TrackRepository(private val context: Context) {
     suspend fun deleteImportedSource(sourceId: String) {
         eventDao.deleteSource(sourceId)
         pointDao.deleteSource(sourceId)
+        snapshotDao.deleteSource(sourceId)
         sourceDao.delete(sourceId)
     }
 
@@ -369,8 +372,18 @@ class TrackRepository(private val context: Context) {
         eventDao.deleteSource(bundle.sourceId)
         pointDao.deleteSource(bundle.sourceId)
 
+        snapshotDao.deleteSource(bundle.sourceId)
+
         if (bundle.points.isNotEmpty()) pointDao.insertAll(bundle.points)
         if (bundle.events.isNotEmpty()) eventDao.insertAll(bundle.events)
+        // 快照也要落库 —— 导出包里一直带着它，但导入端此前直接丢弃，
+        // 导致切到对方后顶部看不到电量 / 网络。
+        //
+        // id 必须归零：那是采集端的自增主键，直接搬过来会撞本机的行。
+        // 归零后由本库重新分配，sourceId 才是区分来源的依据。
+        if (bundle.snapshots.isNotEmpty()) {
+            snapshotDao.insertAll(bundle.snapshots.map { it.copy(id = 0) })
+        }
 
         val daysCovered = (bundle.points.map { it.dayKey } + bundle.events.map { it.dayKey })
             .filter { it.isNotBlank() }

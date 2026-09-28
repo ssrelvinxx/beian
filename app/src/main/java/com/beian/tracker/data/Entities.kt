@@ -38,12 +38,19 @@ data class TrackPoint(
 /** 设备状态快照（电量 / 屏幕 / 解锁 / 网络）。 */
 @Entity(
     tableName = "device_snapshots",
-    indices = [Index("timestamp"), Index("dayKey")],
+    indices = [Index("timestamp"), Index("dayKey"), Index("sourceId")],
 )
 data class DeviceSnapshot(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val timestamp: Long,
     val dayKey: String,
+    /**
+     * 数据来源：本机 = LOCAL，导入的对方数据 = 对应 sourceId。
+     *
+     * 之前这张表没有来源字段，导入时对方的快照根本没法落库，
+     * 报备页切到对方后顶部看不到电量 / 网络，看着像「切换没生效」。
+     */
+    val sourceId: String = LOCAL_SOURCE,
     val batteryLevel: Int,
     val batteryCharging: Boolean,
     /** 当日累计屏幕使用时长（毫秒）。 */

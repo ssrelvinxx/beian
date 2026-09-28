@@ -1,12 +1,5 @@
 package com.beian.tracker.util
 
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
@@ -16,6 +9,13 @@ import kotlin.math.cos
 import kotlin.math.ln
 import kotlin.math.sinh
 import kotlin.math.tan
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * 瓦片预下载：把一个经纬度范围、若干缩放级别的 OSM 瓦片抓进本地缓存。
