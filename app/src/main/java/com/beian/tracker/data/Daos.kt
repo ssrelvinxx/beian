@@ -175,6 +175,18 @@ interface EventLogDao {
     @Query("SELECT * FROM event_log WHERE sourceId = :sourceId AND type = :type ORDER BY timestamp DESC LIMIT 1")
     suspend fun latestOfType(sourceId: String, type: String): EventLog?
 
+    /**
+     * 最近一条网络事件（WiFi / 移动网络 / 断开三种都算）。
+     *
+     * 网络去重需要跨类型比较：从 WiFi 切到移动网络也是「状态变了」，
+     * 得能看到上一条是哪种。只查单一 type 做不到。
+     */
+    @Query(
+        "SELECT * FROM event_log WHERE sourceId = :sourceId AND type IN (:types) " +
+            "ORDER BY timestamp DESC LIMIT 1",
+    )
+    suspend fun latestOfTypes(sourceId: String, types: List<String>): EventLog?
+
     /** 某天是否已存在某个类型的事件（用于「今天第 1 次打开手机」这类判定）。 */
     @Query("SELECT COUNT(*) FROM event_log WHERE sourceId = :sourceId AND dayKey = :day AND type = :type")
     suspend fun countOfTypeOnDay(sourceId: String, day: String, type: String): Int

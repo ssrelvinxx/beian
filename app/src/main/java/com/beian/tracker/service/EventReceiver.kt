@@ -35,6 +35,9 @@ class EventReceiver : BroadcastReceiver() {
         // 本条广播直接产出的事件（type -> 文案）
         val pending = ArrayList<Pair<String, String>>()
 
+        // 当前网络状态（type to ssid）；非网络广播时为 null
+        var netState: Pair<String, String>? = null
+
         when (action) {
             Intent.ACTION_SCREEN_ON -> {
                 pending.add(EventType.SCREEN_ON to "TA打开了手机屏幕")
@@ -76,7 +79,10 @@ class EventReceiver : BroadcastReceiver() {
                     DeviceInfo.NET_CELLULAR -> EventType.NET_CELLULAR
                     else -> EventType.NET_NONE
                 }
+                // 网络状态一起交给下面按「状态是否真的变了」判定，
+                // 不能只靠时间窗 —— 见对 NET_* 分支的注释。
                 pending.add(type to title)
+                netState = net.type to net.name
             }
         }
 
@@ -118,11 +124,30 @@ class EventReceiver : BroadcastReceiver() {
                     EventType.BATTERY_FULL ->
                         dao.countOfTypeOnDay(LOCAL_SOURCE, day, EventType.BATTERY_FULL) == 0
 
-                    // 网络：系统切换时会连发多次广播，给一个短窗口足够。
+                    // 网络：**必须按状态变化判定，不能按时间窗**。
+                    //
+                    // 连上 WiFi 后系统会不停发 CONNECTIVITY_ACTION（信号强弱、
+                    // DHCP 续约、门户检测……），有时几分钟一次。
+                    // 只给一个 5 秒窗口的话，每次超过窗口就再记一条 ——
+                    // 表现就是「连上 WiFi 之后一直报」。
+                    //
+                    // 正确做法：把当前 (类型, SSID) 和上一条网络事件比，
+                    // 只有真的变了才记。
                     EventType.NET_WIFI,
                     EventType.NET_CELLULAR,
                     EventType.NET_NONE,
-                    -> last == null || now - last.timestamp > NET_DEDUP_MS
+                    -> {
+                        val cur = netState
+                        if (cur == null) {
+                            // 理论上走不到（这个分支只由网络广播触发）
+                            last == null || now - last.timestamp > NET_DEDUP_MS
+                        } else {
+                            val prev = dao.latestOfTypes(LOCAL_SOURCE, NET_EVENT_TYPES)
+                            prev == null ||
+                                prev.type != type ||
+                                prev.detail != cur.second
+                        }
+                    }
 
                     // 充电 / 屏幕：瞬时动作，只防同一瞬间的双发。
                     else -> last == null || now - last.timestamp > SAME_MOMENT_MS
@@ -143,6 +168,10 @@ class EventReceiver : BroadcastReceiver() {
                             type = type,
                             timestamp = now,
                             title = title,
+                            // 网络事件把 SSID 存进 detail，下次广播拿它比对。
+                            // 换一个 WiFi 属于状态变化，应当记录。
+                            // 只有网络事件才写，别的类型保持 detail 默认值。
+                            detail = if (netState != null) netState.second else "",
                         ),
                     )
                 }
@@ -181,8 +210,15 @@ class EventReceiver : BroadcastReceiver() {
         /** 同一瞬间的重复保护（防止系统双发广播）。 */
         const val SAME_MOMENT_MS = 2_000L
 
-        /** 网络切换的合并窗口。 */
+        /** 网络切换的合并窗口（仅在拿不到当前状态时的兜底）。 */
         const val NET_DEDUP_MS = 5_000L
+
+        /** 网络类事件的全部类型，供状态比对时跨类型查询。 */
+        val NET_EVENT_TYPES = listOf(
+            EventType.NET_WIFI,
+            EventType.NET_CELLULAR,
+            EventType.NET_NONE,
+        )
 
         /** 低电量重复提醒的最小间隔：中途必须充过电（离开低电量区）才会再提醒。 */
         const val BATTERY_RECYCLE_MS = 30 * 60_000L
