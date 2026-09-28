@@ -29,6 +29,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.beian.tracker.R
 import com.beian.tracker.data.EventLog
 import com.beian.tracker.data.LOCAL_SOURCE
 import com.beian.tracker.util.TimeUtil
