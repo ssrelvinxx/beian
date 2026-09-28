@@ -151,7 +151,7 @@
     <string name="report_app_usage">App usage today</string>
     <string name="report_app_usage_total">Total %1$s</string>
     <string name="report_app_usage_empty">No data yet — grant "Usage access" in Settings</string>
-    <string name="report_peer_no_app_usage">App usage isn't included in shared data</string>
+    <string name="report_peer_no_app_usage">App usage is not included in shared data</string>
     <string name="report_app_usage_more">Show %1$d more</string>
     <string name="report_app_usage_less">Show less</string>
 </resources>
