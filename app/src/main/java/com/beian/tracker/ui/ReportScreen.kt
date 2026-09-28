@@ -65,6 +65,13 @@ fun ReportScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
 
         SourceSelector(vm)
 
+        // ── 开始记录（只在本机视图显示）──────────────────────────────────────
+        // 记录只开不关，所以这里没有「停止」按钮。
+        // 看对方的数据包时不该出现这个入口，否则容易误触。
+        if (isLocal) {
+            StartRecordingCard(vm)
+        }
+
         // ── 顶部信息栏 ────────────────────────────────────────────────────────
         Card(
             modifier = Modifier

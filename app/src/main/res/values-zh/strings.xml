@@ -26,6 +26,10 @@
 
     <string name="history_title">历史轨迹</string>
     <string name="history_empty">暂无记录</string>
+    <string name="history_hourly_title">各时段使用情况</string>
+    <string name="history_hourly_empty">这一天没有使用记录</string>
+    <string name="history_hourly_peak">最活跃时段：%1$s</string>
+    <string name="history_hourly_axis">0 时 — 6 时 — 12 时 — 18 时 — 24 时</string>
     <string name="history_points">%1$d 点</string>
     <string name="history_day_detail">当日详情</string>
 
@@ -134,6 +138,10 @@
     <string name="map_offline_progress">%1$d/%2$d（%3$d%%）</string>
     <string name="map_offline_failed"> · 失败 %1$d</string>
     <string name="settings_bg_title">后台常驻</string>
+    <string name="settings_bg_running">采集服务状态</string>
+    <string name="settings_bg_running_on">后台正在记录</string>
+    <string name="settings_bg_running_off">未运行 — 请到报备页点「开始记录」</string>
+    <string name="settings_bg_never_asked">尚未允许</string>
     <string name="settings_bg_desc">不加白名单的话，息屏一段时间后系统可能冻结应用，导致轨迹断点、事件丢失。</string>
     <string name="settings_bg_battery">忽略电池优化</string>
     <string name="settings_bg_battery_desc">让系统不要在息屏后冻结本应用</string>
@@ -152,6 +160,12 @@
     <string name="report_app_usage_total">共 %1$s</string>
     <string name="report_app_usage_empty">暂无数据 — 请在设置里授予「使用情况访问」</string>
     <string name="report_peer_no_app_usage">App 使用排行不在共享的数据包内</string>
+    <string name="report_start_recording">开始记录</string>
+    <string name="report_recording_on">正在记录</string>
+    <string name="report_perm_needed">开始前需要先授权</string>
+    <string name="report_perm_desc">点这里补齐缺少的权限</string>
+    <string name="report_perm_background_hint">建议把定位设为「始终允许」，否则息屏后会断点</string>
+    <string name="report_perm_go_settings">去设置</string>
     <string name="report_app_usage_more">展开其余 %1$d 个</string>
     <string name="report_app_usage_less">收起</string>
 </resources>

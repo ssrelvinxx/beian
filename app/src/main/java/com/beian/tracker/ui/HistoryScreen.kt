@@ -24,6 +24,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.beian.tracker.R
+import com.beian.tracker.util.AppEventDeriver
 import com.beian.tracker.util.TimeUtil
 
 @Composable
@@ -32,6 +33,8 @@ fun HistoryScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     val summaries by vm.allSummaries.collectAsStateWithLifecycle()
     val selected by vm.selectedDay.collectAsStateWithLifecycle()
     val points by vm.todayPoints.collectAsStateWithLifecycle()
+    val hourlySessions by vm.hourlySessions.collectAsStateWithLifecycle()
+    val selfPkg = vm.selfPackageName
 
     // 展开某天的时间线
     var expandedDay by remember { mutableStateOf<String?>(null) }
@@ -58,6 +61,13 @@ fun HistoryScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         Text(
             text = "${stringResource(R.string.history_day_detail)}: $selected",
             style = MaterialTheme.typography.titleSmall,
+        )
+
+        // ── 各时段使用强度 ────────────────────────────────────────────────────
+        // 跟着上面选中的日期走（selectedDay 变化会重算，见 vm.hourlySessions）
+        HourlyUsageChart(
+            sessions = hourlySessions,
+            filter = { pkg -> AppEventDeriver.isReportable(pkg, selfPkg) },
         )
 
         if (days.isEmpty()) {

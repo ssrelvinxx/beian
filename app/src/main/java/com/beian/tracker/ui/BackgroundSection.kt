@@ -13,6 +13,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -23,6 +24,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.beian.tracker.R
 import com.beian.tracker.util.BackgroundGuard
 
@@ -38,6 +42,24 @@ fun BackgroundSection(modifier: Modifier = Modifier) {
 
     // 每次进入页面重新检测（用户可能刚从系统设置返回）
     var batteryOk by remember { mutableStateOf(BackgroundGuard.isIgnoringBatteryOptimizations(context)) }
+
+    // 采集服务此刻是否真的在跑。
+    // 用户最容易困惑的就是「我到底有没有在后台记录」——
+    // 只看开关状态会骗人（开关开着但服务被系统杀了）。
+    // 挂生命周期监听：从系统设置回来时重新确认一次。
+    var serviceRunning by remember { mutableStateOf(BackgroundGuard.isTrackingServiceRunning(context)) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                serviceRunning = BackgroundGuard.isTrackingServiceRunning(context)
+                batteryOk = BackgroundGuard.isIgnoringBatteryOptimizations(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     val vendor = BackgroundGuard.vendorLabel()
     val needsVendor = BackgroundGuard.needsVendorGuidance()
 
@@ -50,6 +72,33 @@ fun BackgroundSection(modifier: Modifier = Modifier) {
                 text = stringResource(R.string.settings_bg_title),
                 style = MaterialTheme.typography.titleMedium,
             )
+            // ── 服务真实状态 ──────────────────────────────────────────────────
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = stringResource(R.string.settings_bg_running),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Text(
+                    text = stringResource(
+                        if (serviceRunning) {
+                            R.string.settings_bg_running_on
+                        } else {
+                            R.string.settings_bg_running_off
+                        },
+                    ),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (serviceRunning) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.error
+                    },
+                )
+            }
+
             Text(
                 text = stringResource(R.string.settings_bg_desc),
                 style = MaterialTheme.typography.bodySmall,

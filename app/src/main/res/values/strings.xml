@@ -26,6 +26,10 @@
 
     <string name="history_title">History</string>
     <string name="history_empty">No records yet</string>
+    <string name="history_hourly_title">Usage by hour</string>
+    <string name="history_hourly_empty">No session data for this day</string>
+    <string name="history_hourly_peak">Busiest hour: %1$s</string>
+    <string name="history_hourly_axis">0h — 6h — 12h — 18h — 24h</string>
     <string name="history_points">%1$d pts</string>
     <string name="history_day_detail">Day detail</string>
 
@@ -134,6 +138,10 @@
     <string name="map_offline_progress">%1$d/%2$d (%3$d%%)</string>
     <string name="map_offline_failed"> · %1$d failed</string>
     <string name="settings_bg_title">Keep running in background</string>
+    <string name="settings_bg_running">Service status</string>
+    <string name="settings_bg_running_on">Recording in background</string>
+    <string name="settings_bg_running_off">Not running — start it from the Report tab</string>
+    <string name="settings_bg_never_asked">Not allowed yet</string>
     <string name="settings_bg_desc">Without this, the system may freeze the app while the screen is off, causing gaps in the track and missing events.</string>
     <string name="settings_bg_battery">Ignore battery optimization</string>
     <string name="settings_bg_battery_desc">Prevents the system from putting the app to sleep</string>
@@ -152,6 +160,12 @@
     <string name="report_app_usage_total">Total %1$s</string>
     <string name="report_app_usage_empty">No data yet — grant "Usage access" in Settings</string>
     <string name="report_peer_no_app_usage">App usage is not included in shared data</string>
+    <string name="report_start_recording">Start recording</string>
+    <string name="report_recording_on">Recording</string>
+    <string name="report_perm_needed">Permissions needed before recording</string>
+    <string name="report_perm_desc">Tap to grant the missing permissions</string>
+    <string name="report_perm_background_hint">Allow "Always" location so recording survives screen-off</string>
+    <string name="report_perm_go_settings">Open settings</string>
     <string name="report_app_usage_more">Show %1$d more</string>
     <string name="report_app_usage_less">Show less</string>
 </resources>

@@ -1,6 +1,7 @@
 package com.beian.tracker.util
 
 import android.annotation.SuppressLint
+import android.app.ActivityManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -8,6 +9,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
+import com.beian.tracker.service.TrackService
 
 /**
  * 后台常驻保障。
@@ -24,6 +26,29 @@ import android.provider.Settings
 object BackgroundGuard {
 
     /** 是否已加入电池优化白名单（即不会被 Doze 限制）。 */
+    /**
+     * 采集服务此刻是否真的在系统里跑着。
+     *
+     * 不能只看 [TrackService.isRunning] 那个进程内标记：
+     * 进程还活着、Service 已被系统回收时，那个标记仍然是 true，
+     * 会让用户以为在记录、其实什么都没采到。
+     *
+     * 这里直接问系统 —— ActivityManager.getRunningServices 虽然官方
+     * 标记为调试用，但对「本应用自己的服务在不在」是最直接的答案。
+     */
+    fun isTrackingServiceRunning(context: Context): Boolean {
+        return try {
+            val am = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+            @Suppress("DEPRECATION")
+            am.getRunningServices(Int.MAX_VALUE).any {
+                it.service.className == TrackService::class.java.name
+            }
+        } catch (_: Exception) {
+            // 拿不到就退回进程内标记，聊胜于无
+            TrackService.isRunning()
+        }
+    }
+
     fun isIgnoringBatteryOptimizations(context: Context): Boolean {
         val pm = context.getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return false
         return pm.isIgnoringBatteryOptimizations(context.packageName)

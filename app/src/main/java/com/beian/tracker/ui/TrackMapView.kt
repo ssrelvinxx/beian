@@ -1,8 +1,10 @@
 package com.beian.tracker.ui
 
 import android.graphics.Color
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -23,6 +25,8 @@ import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
+import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
+import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
 
 /**
  * 轨迹地图。支持离线显示：
@@ -38,6 +42,21 @@ fun TrackMapView(
     points: List<TrackPoint>,
     modifier: Modifier = Modifier,
     offlineMode: Boolean = false,
+    /**
+     * 是否显示「我的位置」蓝点。
+     *
+     * 只在看本机数据时显示 —— 看对方的轨迹却把自己标上去会让人误解。
+     */
+    showMyLocation: Boolean = false,
+    /**
+     * 定位权限当前是否已授予。
+     *
+     * 必须由调用方传入并作为 remember 的 key：
+     * 用户在弹窗里授权后，本组件会重组，但 showMyLocation 没变，
+     * 只用它做 key 的话蓝点永远不会创建 —— 表现就是
+     * 「明明给了定位权限，地图上还是没有我」。
+     */
+    locationGranted: Boolean = false,
 ) {
     val context = LocalContext.current
 
@@ -45,21 +64,6 @@ fun TrackMapView(
     remember {
         MapTileStore.configure(context)
         true
-    }
-
-    if (points.isEmpty()) {
-        Box(
-            modifier = modifier.padding(24.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = stringResource(R.string.map_no_points),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-            )
-        }
-        return
     }
 
     val startLabel = stringResource(R.string.map_start)
@@ -81,6 +85,37 @@ fun TrackMapView(
         onDispose { }
     }
 
+    // 「我的位置」蓝点。
+    //
+    // 只在看本机数据时挂上 —— 看对方轨迹却把自己标上去会误导。
+    // 权限没给就不创建，避免 osmdroid 内部抛 SecurityException。
+    val myLocation = remember(showMyLocation, locationGranted) {
+        if (!showMyLocation || !locationGranted) {
+            null
+        } else {
+            runCatching {
+                MyLocationNewOverlay(GpsMyLocationProvider(context), mapView)
+            }.getOrNull()
+        }
+    }
+
+    DisposableEffect(myLocation) {
+        myLocation?.let {
+            mapView.overlays.add(it)
+            // onResume 之后 enableMyLocation 才会真正开始接收定位回调，
+            // 少了这一步蓝点不会出现。
+            it.onResume()
+            it.enableMyLocation()
+        }
+        onDispose {
+            myLocation?.let { ov ->
+                ov.disableMyLocation()
+                ov.onPause()
+                mapView.overlays.remove(ov)
+            }
+        }
+    }
+
     DisposableEffect(Unit) {
         onResume(mapView)
         onDispose {
@@ -89,14 +124,34 @@ fun TrackMapView(
         }
     }
 
-    AndroidView(
-        modifier = modifier,
-        factory = { mapView },
-        update = { view ->
-            applyOfflineMode(view, offlineMode)
-            drawTrack(view, points, startLabel, endLabel)
-        },
-    )
+    Box(modifier = modifier) {
+        AndroidView(
+            modifier = Modifier.matchParentSize(),
+            factory = { mapView },
+            update = { view ->
+                applyOfflineMode(view, offlineMode)
+                drawTrack(view, points, startLabel, endLabel, myLocation)
+            },
+        )
+
+        // 还没采到点时给一句提示，而不是留一片空白地图让人以为坏了
+        if (points.isEmpty()) {
+            Text(
+                text = stringResource(R.string.map_no_points),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(12.dp)
+                    .background(
+                        MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
+                        RoundedCornerShape(8.dp),
+                    )
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+            )
+        }
+    }
 }
 
 /**
@@ -127,8 +182,11 @@ private fun drawTrack(
     points: List<TrackPoint>,
     startLabel: String,
     endLabel: String,
+    keepOverlay: org.osmdroid.views.overlay.Overlay? = null,
 ) {
-    view.overlays.clear()
+    // 不能直接 clear() —— 会把「我的位置」浮层一起清掉。
+    // 只摘掉上一次画的轨迹线和起终点标记。
+    view.overlays.removeAll { it !== keepOverlay }
 
     val geoPoints = points.map { GeoPoint(it.latitude, it.longitude) }
 
@@ -168,6 +226,14 @@ private fun drawTrack(
         } else if (geoPoints.isNotEmpty()) {
             view.controller.setZoom(16.0)
             view.controller.setCenter(geoPoints.last())
+        } else {
+            // 还没有任何轨迹点：如果拿得到当前位置就居中过去，
+            // 让人一眼看到「定位是通的」，而不是对着空白地图猜。
+            val mine = (keepOverlay as? MyLocationNewOverlay)?.myLocation
+            if (mine != null) {
+                view.controller.setZoom(16.0)
+                view.controller.setCenter(mine)
+            }
         }
     } catch (_: Exception) {
         // 缩放失败时退回到居中最后一个点

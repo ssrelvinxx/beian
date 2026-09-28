@@ -1,9 +1,5 @@
 package com.beian.tracker.ui
 
-import android.Manifest
-import android.content.pm.PackageManager
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -21,11 +17,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -38,11 +34,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.beian.tracker.R
+import com.beian.tracker.data.LOCAL_SOURCE
 import com.beian.tracker.data.Stay
-import com.beian.tracker.service.TrackService
+import com.beian.tracker.util.PermissionCheck
 import com.beian.tracker.util.TimeUtil
 
 /**
@@ -57,18 +56,26 @@ fun TrackScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     val sourceId by vm.sourceId.collectAsStateWithLifecycle()
     val offlineOnly by vm.offlineMapOnly.collectAsStateWithLifecycle()
 
+    val isLocal = sourceId == LOCAL_SOURCE
+
+    // 定位权限状态。用户在系统弹窗里授权后本页会重组，
+    // 但重组时不会自动重查权限，所以挂个生命周期监听，
+    // 回到前台就重新确认一次 —— 否则授权了地图上也不出现蓝点。
+    var locationGranted by remember { mutableStateOf(PermissionCheck.allGranted(context)) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                locationGranted = PermissionCheck.allGranted(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     var stays by remember { mutableStateOf(emptyList<Stay>()) }
     LaunchedEffect(sourceId, selectedDay) {
         stays = vm.staysOfDay(sourceId, selectedDay)
-    }
-
-    val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions(),
-    ) { granted ->
-        if (granted.values.any { it }) {
-            vm.setTracking(true)
-            TrackService.start(context)
-        }
     }
 
     val distance = vm.totalDistance(points)
@@ -98,32 +105,6 @@ fun TrackScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                     color = MaterialTheme.colorScheme.primary,
                 )
             }
-            Button(
-                onClick = {
-                    if (tracking) {
-                        vm.setTracking(false)
-                        TrackService.stop(context)
-                    } else {
-                        val fine = ContextCompat.checkSelfPermission(
-                            context,
-                            Manifest.permission.ACCESS_FINE_LOCATION,
-                        ) == PackageManager.PERMISSION_GRANTED
-                        if (fine) {
-                            vm.setTracking(true)
-                            TrackService.start(context)
-                        } else {
-                            permissionLauncher.launch(
-                                arrayOf(
-                                    Manifest.permission.ACCESS_FINE_LOCATION,
-                                    Manifest.permission.ACCESS_COARSE_LOCATION,
-                                ),
-                            )
-                        }
-                    }
-                },
-            ) {
-                Text(stringResource(if (tracking) R.string.track_stop else R.string.track_start))
-            }
         }
 
         SourceSelector(vm)
@@ -132,6 +113,10 @@ fun TrackScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         TrackMapView(
             points = points,
             offlineMode = offlineOnly,
+            // 看本机数据时把自己的位置也标出来；看对方的包则不加，
+            // 否则会让人以为那条轨迹是自己走的。
+            showMyLocation = isLocal,
+            locationGranted = locationGranted,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(300.dp)

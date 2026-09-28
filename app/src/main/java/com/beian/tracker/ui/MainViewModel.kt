@@ -132,7 +132,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * 直接用构造参数 app（而不是 getApplication()）：类属性按声明顺序初始化，
      * 这里定义在 reportableAppUsage 之前，用构造参数能确保一定已就绪。
      */
-    private val selfPackageName: String = app.packageName
+    /**
+     * 本应用包名。
+     *
+     * 界面层筛掉自身和桌面时要用：调用 [AppEventDeriver.isReportable]
+     * 需要它，否则用户会在排行里看到「桌面」占据第一。
+     */
+    val selfPackageName: String = app.packageName
 
     val appUsage: StateFlow<List<AppUsage>> = _selectedDay
         .flatMapLatest { repository.appUsageOfDay(it) }
@@ -156,6 +162,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
 
     val appSessions: StateFlow<List<AppSession>> = _selectedDay
+        .flatMapLatest { repository.appSessionsOfDay(it) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /**
+     * 当前选中日期的 App 片段，供历史页的时段柱状图使用。
+     *
+     * 注意：app_session 表没有 sourceId，导入的数据包里也不含这项，
+     * 所以这里永远只有本机数据。看对方的数据包时柱状图会显示为空 ——
+     * 那不是 bug，是数据本身不存在。
+     */
+    val hourlySessions: StateFlow<List<AppSession>> = _selectedDay
         .flatMapLatest { repository.appSessionsOfDay(it) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
