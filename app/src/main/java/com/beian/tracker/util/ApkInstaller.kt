@@ -13,6 +13,8 @@ import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * 用系统 DownloadManager 下载新版 APK，并在下载完成后拉起安装界面。
@@ -51,7 +53,7 @@ object ApkInstaller {
      * @param version 用于生成文件名
      * @return DownloadManager 的 id，可用于查询进度；失败返回 -1
      */
-    fun downloadAndInstall(
+    suspend fun downloadAndInstall(
         context: Context,
         url: String,
         version: String,
@@ -64,7 +66,17 @@ object ApkInstaller {
 
         return try {
             val fileName = "huahua_$version.apk"
-            val request = DownloadManager.Request(Uri.parse(url)).apply {
+
+            // GitHub 的 release 资产在国内经常连不上，先找一个可用的加速地址。
+            //
+            // 这一步必须在下发到 DownloadManager **之前**做完：
+            // DownloadManager 一旦 enqueue 就认准那个 URL 了，下载失败只在
+            // 通知栏留个记录，没有任何回调让我们换源重试。
+            // 探测是阻塞 IO（最多几家镜像 × 6 秒），所以整个方法声明成 suspend，
+            // 由调用方放在协程里，绝不能占着主线程。
+            val resolved = withContext(Dispatchers.IO) { DownloadMirrors.resolve(url) }
+
+            val request = DownloadManager.Request(Uri.parse(resolved)).apply {
                 setTitle("$title $version")
                 setDescription("正在下载新版本…")
                 setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)

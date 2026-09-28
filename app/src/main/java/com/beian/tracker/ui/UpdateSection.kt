@@ -19,6 +19,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -30,6 +31,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.beian.tracker.R
 import com.beian.tracker.util.ApkInstaller
 import com.beian.tracker.util.TimeUtil
+import kotlinx.coroutines.launch
 
 /**
  * 设置页里的「检查更新」区块。
@@ -44,8 +46,6 @@ fun UpdateSection(vm: MainViewModel) {
     val autoCheck by vm.autoCheckUpdate.collectAsStateWithLifecycle()
     val allowPre by vm.allowPrerelease.collectAsStateWithLifecycle()
     val lastCheck by vm.lastUpdateCheckAt.collectAsStateWithLifecycle()
-
-    val available = state as? UpdateUiState.Available
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -154,97 +154,115 @@ fun UpdateSection(vm: MainViewModel) {
         }
     }
 
-    // ── 新版本弹窗 ────────────────────────────────────────────────────────────
-    available?.let { s ->
-        val info = s.info
-        // 在 Composable 上下文先取出字符串：onClick 里不能调 stringResource
-        val needPermissionText = stringResource(R.string.update_need_permission)
-        AlertDialog(
-            onDismissRequest = { vm.dismissUpdate() },
-            title = { Text(stringResource(R.string.update_dialog_title, info.version)) },
-            text = {
-                Column(
-                    modifier = Modifier
-                        .heightIn(max = 340.dp)
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Text(
-                        text = stringResource(R.string.update_dialog_current, s.current),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    if (info.apkSize > 0) {
-                        Text(
-                            text = stringResource(R.string.update_dialog_size, formatSize(info.apkSize)),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    if (info.prerelease) {
-                        Text(
-                            text = stringResource(R.string.update_dialog_prerelease),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.error,
-                        )
-                    }
-                    if (info.notes.isNotBlank()) {
-                        HorizontalDivider()
-                        Text(
-                            text = stringResource(R.string.update_notes),
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Medium,
-                        )
-                        Text(
-                            text = info.notes.trim(),
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                    if (info.apkUrl.isBlank()) {
-                        HorizontalDivider()
-                        Text(
-                            text = stringResource(R.string.update_no_apk),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error,
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        if (!ApkInstaller.canInstall(context)) {
-                            Toast.makeText(
-                                context,
-                                needPermissionText,
-                                Toast.LENGTH_LONG,
-                            ).show()
-                            ApkInstaller.openInstallPermissionSettings(context)
-                            return@TextButton
-                        }
-                        ApkInstaller.downloadAndInstall(
-                            context = context,
-                            url = info.apkUrl,
-                            version = info.version,
-                        )
-                        vm.dismissUpdate()
-                    },
-                    enabled = info.apkUrl.isNotBlank(),
-                ) {
-                    Text(stringResource(R.string.update_install))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { vm.dismissUpdate() }) {
-                    Text(stringResource(R.string.update_later))
-                }
-            },
-        )
-    }
+
 }
 
 private fun formatSize(bytes: Long): String = when {
     bytes >= 1024 * 1024 -> "%.1f MB".format(bytes / 1024.0 / 1024.0)
     bytes >= 1024 -> "%.0f KB".format(bytes / 1024.0)
     else -> "$bytes B"
+}
+
+/**
+ * 新版本提示弹窗。
+ *
+ * 挂在 [MainActivity] 的根布局上，而不是设置页里 ——
+ * 启动时是静默检查的，用户多半停在报备页，弹窗若只在设置页渲染
+ * 就等于「检查到了却永远不提示」，更新功能形同不存在。
+ *
+ * 设置页另有 [UpdateSection] 卡片可以手动检查，两者共用同一份
+ * [MainViewModel.updateState]，不会各说各话。
+ */
+@Composable
+fun UpdateAvailableDialog(vm: MainViewModel) {
+    val context = LocalContext.current
+    val state by vm.updateState.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
+
+    val available = state as? UpdateUiState.Available ?: return
+    val info = available.info
+
+    // 在 Composable 上下文先取出字符串：onClick 里不能调 stringResource
+    val needPermissionText = stringResource(R.string.update_need_permission)
+
+    AlertDialog(
+        onDismissRequest = { vm.dismissUpdate() },
+        title = { Text(stringResource(R.string.update_dialog_title, info.version)) },
+        text = {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 340.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.update_dialog_current, available.current),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (info.apkSize > 0) {
+                    Text(
+                        text = stringResource(R.string.update_dialog_size, formatSize(info.apkSize)),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (info.prerelease) {
+                    Text(
+                        text = stringResource(R.string.update_dialog_prerelease),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+                if (info.notes.isNotBlank()) {
+                    HorizontalDivider()
+                    Text(
+                        text = stringResource(R.string.update_notes),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Medium,
+                    )
+                    Text(
+                        text = info.notes.trim(),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                if (info.apkUrl.isBlank()) {
+                    HorizontalDivider()
+                    Text(
+                        text = stringResource(R.string.update_no_apk),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    if (!ApkInstaller.canInstall(context)) {
+                        Toast.makeText(context, needPermissionText, Toast.LENGTH_LONG).show()
+                        ApkInstaller.openInstallPermissionSettings(context)
+                        return@TextButton
+                    }
+                    // 探测加速镜像要联网，放在协程里跑，避免卡住界面
+                    scope.launch {
+                        ApkInstaller.downloadAndInstall(
+                            context = context,
+                            url = info.apkUrl,
+                            version = info.version,
+                        )
+                    }
+                    vm.dismissUpdate()
+                },
+                enabled = info.apkUrl.isNotBlank(),
+            ) {
+                Text(stringResource(R.string.update_install))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = { vm.dismissUpdate() }) {
+                Text(stringResource(R.string.update_later))
+            }
+        },
+    )
 }

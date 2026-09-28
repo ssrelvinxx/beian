@@ -110,4 +110,9 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
             else -> SettingsScreen(vm, modifier)
         }
     }
+
+    // 新版本弹窗挂在这一层：启动时的静默检查一旦发现新版本，
+    // 不管用户当前停在哪个 tab 都能看到提示。
+    // 之前它长在设置页的 UpdateSection 里，等于「检查到了也不提示」。
+    UpdateAvailableDialog(vm)
 }
