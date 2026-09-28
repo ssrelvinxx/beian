@@ -69,6 +69,12 @@ interface DeviceSnapshotDao {
 
     @Query("DELETE FROM device_snapshots WHERE timestamp < :before")
     suspend fun deleteOlderThan(before: Long)
+
+    @Query("DELETE FROM device_snapshots")
+    suspend fun deleteAll()
+
+    @Query("SELECT DISTINCT dayKey FROM device_snapshots")
+    suspend fun days(): List<String>
 }
 
 @Dao
@@ -111,6 +117,9 @@ interface AppUsageDao {
 
     @Query("DELETE FROM app_usage WHERE dayKey < :beforeDay")
     suspend fun deleteBeforeDay(beforeDay: String)
+
+    @Query("DELETE FROM app_usage")
+    suspend fun deleteAll()
 }
 
 @Dao
@@ -140,6 +149,9 @@ interface AppSessionDao {
 
     @Query("DELETE FROM app_session WHERE dayKey < :beforeDay")
     suspend fun deleteBeforeDay(beforeDay: String)
+
+    @Query("DELETE FROM app_session")
+    suspend fun deleteAll()
 }
 
 @Dao

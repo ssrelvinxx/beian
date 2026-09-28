@@ -25,6 +25,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -32,6 +33,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.beian.tracker.R
+import com.beian.tracker.service.TrackService
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -62,6 +64,16 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
     val autoCheck by vm.autoCheckUpdate.collectAsStateWithLifecycle()
     LaunchedEffect(autoCheck) {
         if (autoCheck) vm.checkUpdate(silent = true)
+    }
+
+    // 采集开关是「用户意愿」，不代表服务真在跑。
+    // 进程被杀掉后重开 App，之前只有进轨迹页才会重新拉起服务 ——
+    // 停在报备页就一直没人采集，界面却显示「采集中」。
+    // 这里在 App 起来时确认一次，让开关和现实一致。
+    val context = LocalContext.current
+    val trackingEnabled by vm.trackingEnabled.collectAsStateWithLifecycle()
+    LaunchedEffect(trackingEnabled) {
+        if (trackingEnabled) TrackService.ensureRunning(context)
     }
 
     // 「使用情况访问」是在系统设置里授权的，回来时 ViewModel 不会重建，

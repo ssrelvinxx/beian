@@ -292,10 +292,30 @@ class TrackRepository(private val context: Context) {
      * 否则历史页还挂着已经不存在的里程。
      */
     suspend fun clearLocalData() {
-        val days = pointDao.daysOfSource(LOCAL_SOURCE) + eventDao.daysOfSource(LOCAL_SOURCE)
+        // 先收集涉及的日子，清完要按这些日子重算汇总
+        val days = (
+            pointDao.daysOfSource(LOCAL_SOURCE) +
+                eventDao.daysOfSource(LOCAL_SOURCE) +
+                snapshotDao.days()
+            ).distinct().filter { it.isNotBlank() }
+
         eventDao.deleteSource(LOCAL_SOURCE)
         pointDao.deleteSource(LOCAL_SOURCE)
-        days.distinct().filter { it.isNotBlank() }.forEach { refreshSummary(LOCAL_SOURCE, it) }
+
+        // ⚠️ 下面三张表按 dayKey 存、没有 sourceId，deleteSource 碰不到它们。
+        // 之前只删了 event_log 和 track_points，导致「清空本机数据」之后
+        // App 排行、时间线、电量/屏幕快照全部留着旧数据 —— 看起来没清掉。
+        //
+        // 这三张表本来就只存本机数据（导入包不写入它们），所以整表清空即可。
+        appUsageDao.deleteAll()
+        appSessionDao.deleteAll()
+        snapshotDao.deleteAll()
+
+        // 汇总表（daily_summary）按天存、没有 sourceId，
+        // 直接用 refreshSummary 重算会把它清成 0（点数和里程都没了）。
+        // 这里对每个涉及的日子重算本机数据即可 —— 导入来源的行不受影响，
+        // 因为 refreshSummary 只读 sourceId=LOCAL 的点和快照。
+        days.forEach { refreshSummary(LOCAL_SOURCE, it) }
     }
 
     // ── 导出 / 导入 ───────────────────────────────────────────────────────────

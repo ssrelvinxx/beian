@@ -59,6 +59,7 @@ class TrackService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        running = true
         fused = LocationServices.getFusedLocationProviderClient(this)
         repository = TrackRepository(this)
         settings = SettingsStore(this)
@@ -76,6 +77,9 @@ class TrackService : Service() {
         return START_STICKY
     }
 
+    /** 定位回调是否已注册 —— 防止重复 requestUpdates 导致同一点写多次。 */
+    private var updatesRequested = false
+
     private fun startTracking() {
         startForegroundCompat()
         registerEventReceiver()
@@ -87,7 +91,10 @@ class TrackService : Service() {
             runCatching { repository.backfillScreenEvents() }
 
             val interval = settings.intervalSec.first()
-            requestUpdates(interval)
+            if (!updatesRequested) {
+                requestUpdates(interval)
+                updatesRequested = true
+            }
             startTicker(interval)
         }
     }
@@ -193,6 +200,7 @@ class TrackService : Service() {
         unregisterEventReceiver()
         tickerJob?.cancel()
         scope.cancel()
+        running = false
         super.onDestroy()
     }
 
@@ -204,6 +212,21 @@ class TrackService : Service() {
         private const val CHANNEL_ID = "beian_tracking"
         private const val NOTIF_ID = 1001
 
+        /**
+         * 服务是否正在运行。
+         *
+         * 进程内静态标记：Service 被系统杀掉时进程通常还活着（或者一起死，
+         * 那时标记也跟着没了），两种情况都不会失真。
+         *
+         * 它解决的是「用户设置里开着采集，但 Service 其实没跑」的静默失效 ——
+         * 之前只有 [BootReceiver]（开机）和轨迹页会拉起服务，
+         * App 冷启动后停在报备页就一直没人采集。
+         */
+        @Volatile
+        private var running = false
+
+        fun isRunning(): Boolean = running
+
         fun start(context: Context) {
             val intent = Intent(context, TrackService::class.java).setAction(ACTION_START)
             ContextCompat.startForegroundService(context, intent)
@@ -212,6 +235,20 @@ class TrackService : Service() {
         fun stop(context: Context) {
             val intent = Intent(context, TrackService::class.java).setAction(ACTION_STOP)
             context.startService(intent)
+        }
+
+        /**
+         * 确保服务在运行；已经在跑就什么都不做。
+         *
+         * 幂等很重要：[startTracking] 里的 [requestUpdates] 每调一次就多注册
+         * 一份定位回调，重复调用会让同一个位置被重复写库。
+         *
+         * @return true 表示这次真的发起了启动
+         */
+        fun ensureRunning(context: Context): Boolean {
+            if (running) return false
+            start(context)
+            return true
         }
     }
 }
