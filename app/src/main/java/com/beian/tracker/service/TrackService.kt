@@ -18,12 +18,11 @@ import com.beian.tracker.R
 import com.beian.tracker.data.TrackRepository
 import com.beian.tracker.ui.MainActivity
 import com.beian.tracker.util.SettingsStore
-import com.google.android.gms.location.FusedLocationProviderClient
-import com.google.android.gms.location.LocationCallback
-import com.google.android.gms.location.LocationRequest
-import com.google.android.gms.location.LocationResult
-import com.google.android.gms.location.LocationServices
-import com.google.android.gms.location.Priority
+import android.location.Location
+import android.location.LocationListener
+import android.location.LocationManager
+import android.os.Bundle
+import android.os.Looper
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -46,22 +45,37 @@ class TrackService : Service() {
     private val eventReceiver = EventReceiver()
     private var receiverRegistered = false
 
-    private lateinit var fused: FusedLocationProviderClient
+    private lateinit var locationManager: LocationManager
     private lateinit var repository: TrackRepository
     private lateinit var settings: SettingsStore
 
-    private val locationCallback = object : LocationCallback() {
-        override fun onLocationResult(result: LocationResult) {
-            result.lastLocation?.let { loc ->
-                scope.launch { repository.recordPoint(loc) }
-            }
+    /**
+     * 系统定位回调。
+     *
+     * ⚠️ 这里用的是 android.location.LocationManager，不是 GMS 的
+     * FusedLocationProviderClient —— 详见 [requestUpdates] 的说明。
+     *
+     * 收到的 Location 直接就是 android.location.Location，
+     * 和 [TrackRepository.recordPoint] 的参数类型完全一致，不需要转换。
+     */
+    private val locationListener = object : LocationListener {
+        override fun onLocationChanged(location: Location) {
+            scope.launch { repository.recordPoint(location) }
         }
+
+        // Android 11+ 要求实现，不关心 provider 启停。
+        override fun onProviderEnabled(provider: String) = Unit
+
+        override fun onProviderDisabled(provider: String) = Unit
+
+        @Deprecated("Deprecated in Java")
+        override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) = Unit
     }
 
     override fun onCreate() {
         super.onCreate()
         running = true
-        fused = LocationServices.getFusedLocationProviderClient(this)
+        locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
         repository = TrackRepository(this)
         settings = SettingsStore(this)
         createChannel()
@@ -84,12 +98,10 @@ class TrackService : Service() {
      * ⚠️ 必须在 [onDestroy] 里复位。
      *
      * 它是实例字段，而 [startTracking] 每次 onStartCommand 都会走一遍：
-     * 一旦这里被置 true，进程存活期间的同一次服务生命周期内就不会再注册。
-     * 而 onDestroy 里已经 fused.removeLocationUpdates(locationCallback) 把回调摘了，
-     * 若此时 True 的状态跟着 Service 实例残留（例如服务被系统 stop 后
-     * 又在同一进程里被重新拉起、复用了同一个 Service 实例的字段语义），
-     * 就会变成「回调已移除、却永远不会再注册」——
-     * 结果就是定位图标还在（请求由系统侧保留），但一个点都收不到。
+     * 一旦这里被置 true，同一次服务生命周期内就不会再注册。
+     * 而 onDestroy 里已经 removeUpdates 把回调摘了，
+     * 标志不复位就会变成「回调已移除、却永远不会再注册」——
+     * 结果是一个点都收不到。
      */
     private var updatesRequested = false
 
@@ -112,31 +124,97 @@ class TrackService : Service() {
         }
     }
 
-    private fun requestUpdates(intervalSec: Int) {
-        // ⚠️ 必须用 HIGH_ACCURACY，不要改成 BALANCED_POWER_ACCURACY。
-        //
-        // 之前用的是 BALANCED_POWER_ACCURACY + setMinUpdateDistanceMeters(10f)，
-        // 在 ColorOS / MIUI 这类激进省电的 ROM 上会被系统判定为「低优先级请求」
-        // 而直接降级：请求发出去了（状态栏能看到定位图标），但回调长期不触发，
-        // 轨迹点一条都落不了库 —— 而同一进程里基于 UsageStats 的 App 使用统计
-        // 照常有数据，于是表现为「报备页有数据、轨迹页却一个点都没有」。
-        //
-        // 对照验证：高德地图能正常定位，用的正是 HIGH_ACCURACY。
-        //
-        // 距离阈值一并去掉：采集本来就靠 intervalSec 控制频率，
-        // 再加 10 米门槛会让「静止不动」时永远收不到回调，
-        // 停留点分析也失去依据。
-        val request = LocationRequest.Builder(
-            Priority.PRIORITY_HIGH_ACCURACY,
-            intervalSec * 1000L,
-        ).setMinUpdateDistanceMeters(0f)
-            .setWaitForAccurateLocation(false)
-            .build()
+    /** 已注册的 provider，onDestroy 时按此摘除。 */
+    private val registeredProviders = mutableListOf<String>()
 
-        try {
-            fused.requestLocationUpdates(request, locationCallback, mainLooper)
-        } catch (_: SecurityException) {
-            // 权限被撤销，忽略
+    /**
+     * 注册系统定位回调。
+     *
+     * ⚠️ 这里刻意使用 android.location.LocationManager，而不是 GMS 的
+     * FusedLocationProviderClient。
+     *
+     * 原因：国行 ROM（ColorOS / HarmonyOS 等）普遍没有完整的 Google 服务框架，
+     * 或者 GMS 被深度冻结。此时 LocationServices.getFusedLocationProviderClient()
+     * 不会抛异常（所以原来的 try/catch SecurityException 完全抓不到），
+     * requestLocationUpdates() 也「调用成功」，但回调永远不会触发 ——
+     * 一个轨迹点都收不到，而且没有任何错误可供排查。
+     *
+     * 同一台机器上高德地图、系统相机的地理标记都正常，因为它们走的正是
+     * 系统原生 LocationManager，不依赖 GMS。改用系统 API 后行为与它们一致。
+     *
+     * 另外注册多个 provider 并取「最近已知位置」做种子：
+     * GPS 在室内可能长时间定不到位，此时 NETWORK_PROVIDER 仍能给出
+     * 基站/WiFi 级定位，避免整块地图空着。
+     */
+    private fun requestUpdates(intervalSec: Int) {
+        val minTimeMs = intervalSec * 1000L
+        val providers = listOf(
+            LocationManager.GPS_PROVIDER,
+            LocationManager.NETWORK_PROVIDER,
+        )
+
+        registeredProviders.clear()
+        for (provider in providers) {
+            try {
+                // provider 被用户在系统里关掉时直接跳过，不要注册
+                // （注册了也不会回调，只会让人误以为「已经在采集」）。
+                if (!locationManager.isProviderEnabled(provider)) {
+                    Log.w(TAG, "provider disabled, skip: $provider")
+                    continue
+                }
+                locationManager.requestLocationUpdates(
+                    provider,
+                    minTimeMs,
+                    0f, // 不设最小位移门槛：靠 minTime 控频，静止时也要有点
+                    locationListener,
+                    Looper.getMainLooper(),
+                )
+                registeredProviders.add(provider)
+            } catch (e: SecurityException) {
+                // 权限被撤销
+                Log.w(TAG, "no location permission for $provider", e)
+            } catch (e: IllegalArgumentException) {
+                // provider 不存在（部分 ROM 没有 NETWORK_PROVIDER）
+                Log.w(TAG, "provider unavailable: $provider", e)
+            } catch (e: Exception) {
+                Log.w(TAG, "requestLocationUpdates failed: $provider", e)
+            }
+        }
+
+        if (registeredProviders.isEmpty()) {
+            Log.w(TAG, "没有可用的定位 provider，轨迹将无法采集")
+        }
+
+        seedLastKnownLocation(providers)
+    }
+
+    /**
+     * 用「最近已知位置」补一个点。
+     *
+     * 注册回调后要等系统派点（GPS 冷启动可能要几十秒），这期间轨迹页
+     * 一直是空的，看着就像「采集没生效」。系统缓存的最后一次位置
+     * 通常就是几秒前，直接落库能让界面立刻有反馈。
+     *
+     * 只接受足够新鲜的位置：过期的缓存点会在地图上把当前人拉到一个
+     * 完全错误的地方，比空着更糟。
+     */
+    private fun seedLastKnownLocation(providers: List<String>) {
+        val now = System.currentTimeMillis()
+        val freshest = providers.mapNotNull { provider ->
+            try {
+                locationManager.getLastKnownLocation(provider)
+            } catch (_: SecurityException) {
+                null
+            } catch (_: Exception) {
+                null
+            }
+        }.maxByOrNull { it.time } ?: return
+
+        if (now - freshest.time > LAST_KNOWN_MAX_AGE_MS) return
+
+        scope.launch {
+            runCatching { repository.recordPoint(freshest) }
+                .onFailure { Log.w(TAG, "seed last known location failed", it) }
         }
     }
 
@@ -243,10 +321,11 @@ class TrackService : Service() {
 
     override fun onDestroy() {
         try {
-            fused.removeLocationUpdates(locationCallback)
+            locationManager.removeUpdates(locationListener)
         } catch (_: Exception) {
             // 忽略
         }
+        registeredProviders.clear()
         // 回调已移除，标志必须一起复位，否则下次 startTracking 会因为
         // updatesRequested == true 而跳过注册 —— 定位请求还在、点却永远收不到。
         updatesRequested = false
@@ -265,6 +344,9 @@ class TrackService : Service() {
         private const val TAG = "TrackService"
         private const val CHANNEL_ID = "beian_tracking"
         private const val NOTIF_ID = 1001
+
+        /** 「最近已知位置」的最大可接受年龄：超过就当过期，不用它补点。 */
+        private const val LAST_KNOWN_MAX_AGE_MS = 2 * 60 * 1000L
 
         /**
          * 服务是否正在运行。

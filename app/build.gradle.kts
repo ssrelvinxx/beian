@@ -110,7 +110,12 @@ dependencies {
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
 
-    implementation(libs.play.services.location)
+    // ⚠️ 不要加回 play-services-location。
+    //
+    // 定位一律走系统原生 android.location.LocationManager：
+    // 国行 ROM 上 GMS 常缺失或被冻结，FusedLocationProviderClient 会
+    // 「调用成功但永不回调」，一个轨迹点都收不到且无异常可查。
+    // 系统原生 API 在高德等所有第三方地图上都验证可用。
     implementation(libs.osmdroid.android)
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.kotlinx.serialization.json)
