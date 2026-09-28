@@ -26,14 +26,33 @@ import androidx.core.content.ContextCompat
  */
 object PermissionCheck {
 
-    /** 采集能正常跑起来的最小权限集合。 */
+    /**
+     * 采集能正常跑起来的最小权限集合。
+     *
+     * ⚠️ 定位只要求 COARSE，不把 FINE 列为必需。
+     *
+     * Android 12+ 允许用户只授予「大致位置」。若把 FINE 列为必需，
+     * 这类用户的 [missing] 永远非空、[allGranted] 永远为 false ——
+     * 轨迹页会一直显示「请授权」并把地图整块盖住，
+     * 而采集其实完全可以靠 COARSE 跑起来。
+     *
+     * FINE 属于「更好，但不是必需」：有就用，没有也不该判定为失败。
+     */
     fun required(): List<String> = buildList {
-        add(Manifest.permission.ACCESS_FINE_LOCATION)
         add(Manifest.permission.ACCESS_COARSE_LOCATION)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             add(Manifest.permission.POST_NOTIFICATIONS)
         }
     }
+
+    /** 是否拿到了精确定位（非必需，仅用于提示质量）。 */
+    fun hasFineLocation(context: Context): Boolean =
+        granted(context, Manifest.permission.ACCESS_FINE_LOCATION)
+
+    /** 是否有任意一种定位权限。 */
+    fun hasAnyLocation(context: Context): Boolean =
+        granted(context, Manifest.permission.ACCESS_FINE_LOCATION) ||
+            granted(context, Manifest.permission.ACCESS_COARSE_LOCATION)
 
     /**
      * 息屏后仍要记录所需的后台定位权限。

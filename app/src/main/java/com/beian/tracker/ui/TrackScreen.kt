@@ -61,12 +61,17 @@ fun TrackScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     // 定位权限状态。用户在系统弹窗里授权后本页会重组，
     // 但重组时不会自动重查权限，所以挂个生命周期监听，
     // 回到前台就重新确认一次 —— 否则授权了地图上也不出现蓝点。
-    var locationGranted by remember { mutableStateOf(PermissionCheck.allGranted(context)) }
+    //
+    // ⚠️ 这里判断的是「有没有任意一种定位权限」，不是 allGranted()。
+    // allGranted() 还包含通知权限，两者语义不同：通知没给时采集确实会残缺，
+    // 但地图照样该能画 —— 用 allGranted() 会让地图被「请授权」整块盖住，
+    // 看着就像「有定位权限却什么都不显示」。
+    var locationGranted by remember { mutableStateOf(PermissionCheck.hasAnyLocation(context)) }
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                locationGranted = PermissionCheck.allGranted(context)
+                locationGranted = PermissionCheck.hasAnyLocation(context)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)

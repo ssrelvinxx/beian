@@ -78,7 +78,19 @@ class TrackService : Service() {
         return START_STICKY
     }
 
-    /** 定位回调是否已注册 —— 防止重复 requestUpdates 导致同一点写多次。 */
+    /**
+     * 定位回调是否已注册 —— 防止重复 requestUpdates 导致同一点被写多次。
+     *
+     * ⚠️ 必须在 [onDestroy] 里复位。
+     *
+     * 它是实例字段，而 [startTracking] 每次 onStartCommand 都会走一遍：
+     * 一旦这里被置 true，进程存活期间的同一次服务生命周期内就不会再注册。
+     * 而 onDestroy 里已经 fused.removeLocationUpdates(locationCallback) 把回调摘了，
+     * 若此时 True 的状态跟着 Service 实例残留（例如服务被系统 stop 后
+     * 又在同一进程里被重新拉起、复用了同一个 Service 实例的字段语义），
+     * 就会变成「回调已移除、却永远不会再注册」——
+     * 结果就是定位图标还在（请求由系统侧保留），但一个点都收不到。
+     */
     private var updatesRequested = false
 
     private fun startTracking() {
@@ -101,10 +113,23 @@ class TrackService : Service() {
     }
 
     private fun requestUpdates(intervalSec: Int) {
+        // ⚠️ 必须用 HIGH_ACCURACY，不要改成 BALANCED_POWER_ACCURACY。
+        //
+        // 之前用的是 BALANCED_POWER_ACCURACY + setMinUpdateDistanceMeters(10f)，
+        // 在 ColorOS / MIUI 这类激进省电的 ROM 上会被系统判定为「低优先级请求」
+        // 而直接降级：请求发出去了（状态栏能看到定位图标），但回调长期不触发，
+        // 轨迹点一条都落不了库 —— 而同一进程里基于 UsageStats 的 App 使用统计
+        // 照常有数据，于是表现为「报备页有数据、轨迹页却一个点都没有」。
+        //
+        // 对照验证：高德地图能正常定位，用的正是 HIGH_ACCURACY。
+        //
+        // 距离阈值一并去掉：采集本来就靠 intervalSec 控制频率，
+        // 再加 10 米门槛会让「静止不动」时永远收不到回调，
+        // 停留点分析也失去依据。
         val request = LocationRequest.Builder(
-            Priority.PRIORITY_BALANCED_POWER_ACCURACY,
+            Priority.PRIORITY_HIGH_ACCURACY,
             intervalSec * 1000L,
-        ).setMinUpdateDistanceMeters(10f)
+        ).setMinUpdateDistanceMeters(0f)
             .setWaitForAccurateLocation(false)
             .build()
 
@@ -162,8 +187,22 @@ class TrackService : Service() {
         receiverRegistered = false
     }
 
+    /**
+     * 是否具备定位权限。
+     *
+     * ⚠️ FINE 和 COARSE 任一即可，不能只认 FINE。
+     *
+     * Android 12+ 的定位授权弹窗允许用户只选「大致位置」，
+     * 此时只有 COARSE 被授予。若这里只检查 FINE，这类用户点「开始记录」后
+     * 会在 [startTracking] 的第一步直接 return —— 整个采集（含 App 使用统计）
+     * 都不启动，而界面上还显示「正在记录」，看起来就是「明明有定位权限却没数据」。
+     *
+     * 代价是精度略低，但「有大致位置」远好过「完全没有数据」。
+     */
     private fun hasLocationPermission(): Boolean =
         ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED ||
+            ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) ==
             PackageManager.PERMISSION_GRANTED
 
     private fun createChannel() {
@@ -208,6 +247,9 @@ class TrackService : Service() {
         } catch (_: Exception) {
             // 忽略
         }
+        // 回调已移除，标志必须一起复位，否则下次 startTracking 会因为
+        // updatesRequested == true 而跳过注册 —— 定位请求还在、点却永远收不到。
+        updatesRequested = false
         unregisterEventReceiver()
         tickerJob?.cancel()
         scope.cancel()
