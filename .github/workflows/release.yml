@@ -48,10 +48,28 @@ jobs:
           echo "version=$V" >> "$GITHUB_OUTPUT"
           echo "Using version: $V"
 
-      - name: Ensure debug keystore
+      # ── 签名密钥：必须每次都用同一把 ──────────────────────────────────
+      #
+      # 之前这里是「不存在就现生成一把」：runner 是干净环境，
+      # 每次 CI 都会 new 一个全新的 debug.keystore —— 也就是每个版本
+      # 签名都不同。Android 不允许签名不同的包覆盖安装，
+      # 于是更新下载后一装就报「已安装」/「签名冲突」。
+      #
+      # 现在把固定的 keystore 以 base64 存在仓库 Secret 里，
+      # 每次构建还原同一份，签名才稳定。
+      - name: Restore signing keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
         run: |
           mkdir -p ~/.android
-          if [ ! -f ~/.android/debug.keystore ]; then
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > ~/.android/debug.keystore
+            echo "✅ 已还原固定 keystore"
+            keytool -list -keystore ~/.android/debug.keystore \
+              -storepass "${KEYSTORE_PASSWORD:-android}" 2>/dev/null | grep -i "SHA256" || true
+          else
+            echo "::warning::未配置 KEYSTORE_BASE64，回退到临时生成 —— 这样出来的包无法覆盖安装"
             keytool -genkeypair -v \
               -keystore ~/.android/debug.keystore \
               -storepass android -keypass android \
