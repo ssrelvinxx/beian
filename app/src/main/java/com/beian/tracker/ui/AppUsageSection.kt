@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.beian.tracker.R
 import com.beian.tracker.data.AppUsage
+import com.beian.tracker.data.LOCAL_SOURCE
 import com.beian.tracker.util.TimeUtil
 
 /** 折叠状态下展示几个 App。 */
@@ -43,11 +44,15 @@ private const val COLLAPSED_COUNT = 3
 fun AppUsageSection(vm: MainViewModel, modifier: Modifier = Modifier) {
     val usage by vm.reportableAppUsage.collectAsStateWithLifecycle()
     val hasAccess by vm.hasUsageAccess.collectAsStateWithLifecycle()
+    val sourceId by vm.sourceId.collectAsStateWithLifecycle()
+    val isLocal = sourceId == LOCAL_SOURCE
 
-    // 没权限：必须给出引导。
-    // 之前这里直接 return，用户装了新版、忘了授权，
-    // 报备页会「什么都没有」且毫无提示，根本不知道该去授权。
-    if (!hasAccess) {
+    // 没权限：只在**看本机数据**时提示授权。
+    //
+    // 看导入的对方数据时不需要任何权限 —— 数据就在本地库里。
+    // 之前这里不看来源，一切到对方就弹「请授权使用情况访问」，
+    // 把对方已经导入好的排行整块盖住，看着像「导入的数据没有排行」。
+    if (isLocal && !hasAccess) {
         Card(
             modifier = modifier
                 .fillMaxWidth()
@@ -72,8 +77,34 @@ fun AppUsageSection(vm: MainViewModel, modifier: Modifier = Modifier) {
         return
     }
 
-    // 有权限但今天没用过 App：这是正常状态，不必占位，静默隐藏
-    if (usage.isEmpty()) return
+    // 没有数据就不占位（本机是「今天没用过 App」，对方是「这个包没带排行」）。
+    // 看对方时给一行说明，否则用户会以为导入漏了数据。
+    if (usage.isEmpty()) {
+        if (!isLocal) {
+            Card(
+                modifier = modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+            ) {
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(
+                        text = stringResource(R.string.report_app_usage),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        text = stringResource(R.string.report_app_usage_peer_empty),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+        return
+    }
 
     var expanded by rememberSaveable { mutableStateOf(false) }
     val visible = if (expanded) usage else usage.take(COLLAPSED_COUNT)

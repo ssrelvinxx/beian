@@ -33,12 +33,14 @@ fun HistoryScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     val selected by vm.selectedDay.collectAsStateWithLifecycle()
     val hourlySessions by vm.hourlySessions.collectAsStateWithLifecycle()
     val selfPkg = vm.selfPackageName
+    val sourceId by vm.sourceId.collectAsStateWithLifecycle()
 
-    // 展开某天的时间线
+    // 展开某天的时间线：必须带上当前来源，
+    // 否则看对方数据时展开的是本机那天的片段。
     var expandedDay by remember { mutableStateOf<String?>(null) }
     var sessions by remember { mutableStateOf(emptyList<com.beian.tracker.data.AppSession>()) }
-    LaunchedEffect(expandedDay) {
-        sessions = expandedDay?.let { vm.appSessionsOfDayOnce(it) } ?: emptyList()
+    LaunchedEffect(expandedDay, sourceId) {
+        sessions = expandedDay?.let { vm.appSessionsOfDayOnce(it, sourceId) } ?: emptyList()
     }
 
     Column(

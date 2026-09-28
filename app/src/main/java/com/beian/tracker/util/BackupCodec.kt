@@ -187,6 +187,9 @@ object BackupCodec {
                 val o = arr.optJSONObject(i) ?: continue
                 appUsage.add(
                     AppUsage(
+                        // ⚠️ 必须写解析后的 sourceId。用默认值（LOCAL）的话，
+                        // 导入的 App 排行会和本机同一天的记录撞主键互相覆盖。
+                        sourceId = sourceId,
                         dayKey = o.optString("d"),
                         packageName = o.optString("pkg"),
                         appLabel = o.optString("label"),
@@ -206,7 +209,10 @@ object BackupCodec {
                 val pkg = o.optString("pkg")
                 appSessions.add(
                     AppSession(
+                        // id 带上来源前缀；sourceId 字段同样显式写死，
+                        // 两者必须一致，否则删来源时按 sourceId 删不掉这些行。
                         id = "$sourceId:$s:$pkg",
+                        sourceId = sourceId,
                         dayKey = o.optString("d"),
                         packageName = pkg,
                         appLabel = o.optString("label"),

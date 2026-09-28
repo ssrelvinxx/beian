@@ -9,6 +9,7 @@ import com.beian.tracker.util.EventDeriver
 import com.beian.tracker.util.TimeUtil
 import com.beian.tracker.util.UsageStatsReader
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 
 /**
  * 轨迹、设备状态、报备事件的读写入口。
@@ -94,7 +95,26 @@ class TrackRepository(private val context: Context) {
 
     suspend fun allPoints(sourceId: String): List<TrackPoint> = pointDao.getAll(sourceId)
 
-    fun observedDays(sourceId: String): Flow<List<String>> = pointDao.observeDays(sourceId)
+    /**
+     * 某来源有数据的全部日期。
+     *
+     * ⚠️ 不能只查轨迹点：导入的数据包可能只有 App 使用记录 / 报备事件，
+     * 一个定位点都没有（对方没给定位权限）。只查 track_points 的话，
+     * 历史页会一天都列不出来，看着像「导入没成功」。
+     *
+     * 四路合并后取并集、倒序去重。
+     */
+    fun observedDays(sourceId: String): Flow<List<String>> = combine(
+        pointDao.observeDays(sourceId),
+        eventDao.observeDays(sourceId),
+        appUsageDao.observeDays(sourceId),
+        appSessionDao.observeDays(sourceId),
+    ) { pointDays, eventDays, usageDays, sessionDays ->
+        (pointDays + eventDays + usageDays + sessionDays)
+            .filter { it.isNotBlank() }
+            .distinct()
+            .sortedDescending()
+    }
 
     // ── 设备快照 ──────────────────────────────────────────────────────────────
 
@@ -128,9 +148,11 @@ class TrackRepository(private val context: Context) {
             if (usageFingerprint != lastUsageFingerprint) {
                 lastUsageFingerprint = usageFingerprint
                 appUsageDao.replaceDay(
+                    LOCAL_SOURCE,
                     day,
                     perApp.map {
                         AppUsage(
+                            sourceId = LOCAL_SOURCE,
                             dayKey = day,
                             packageName = it.packageName,
                             appLabel = it.appLabel,
@@ -160,10 +182,12 @@ class TrackRepository(private val context: Context) {
                 lastSessionFingerprint = fingerprint
 
                 appSessionDao.replaceDay(
+                    LOCAL_SOURCE,
                     day,
                     sessions.map {
                         AppSession(
-                            id = "${it.startAt}:${it.packageName}",
+                            id = "${LOCAL_SOURCE}:${it.startAt}:${it.packageName}",
+                            sourceId = LOCAL_SOURCE,
                             dayKey = day,
                             packageName = it.packageName,
                             appLabel = it.appLabel,
@@ -198,6 +222,7 @@ class TrackRepository(private val context: Context) {
             DeviceSnapshot(
                 timestamp = now,
                 dayKey = day,
+                sourceId = LOCAL_SOURCE,
                 batteryLevel = battery.level,
                 batteryCharging = battery.charging,
                 screenTimeMs = usage.screenTimeMs,
@@ -210,7 +235,7 @@ class TrackRepository(private val context: Context) {
         )
 
         // ── 事件推导 ──────────────────────────────────────────────────────────
-        val prevSnapshot = snapshotDao.latestBefore(now)
+        val prevSnapshot = snapshotDao.latestBeforeOf(LOCAL_SOURCE, now)
         // 当天是否已经记过「第 1 次点亮屏幕」。
         // 广播（EventReceiver）会在亮屏时立刻写入，这里是轮询侧的兜底：
         // 如果服务是当天启动的、又漏掉了亮屏广播，轮询会补上一条。
@@ -300,19 +325,25 @@ class TrackRepository(private val context: Context) {
     fun latestSnapshot(sourceId: String = LOCAL_SOURCE): Flow<DeviceSnapshot?> =
         snapshotDao.observeLatestOf(sourceId)
 
-    suspend fun latestSnapshotOnce(): DeviceSnapshot? = snapshotDao.latest()
+    suspend fun latestSnapshotOnce(sourceId: String = LOCAL_SOURCE): DeviceSnapshot? =
+        snapshotDao.latestOf(sourceId)
 
-    fun snapshotsOfDay(day: String): Flow<List<DeviceSnapshot>> = snapshotDao.observeByDay(day)
+    fun snapshotsOfDay(sourceId: String, day: String): Flow<List<DeviceSnapshot>> =
+        snapshotDao.observeByDayOf(sourceId, day)
 
     // ── 各 App 使用情况 ───────────────────────────────────────────────────────
 
-    fun appUsageOfDay(day: String): Flow<List<AppUsage>> = appUsageDao.observeByDay(day)
+    fun appUsageOfDay(sourceId: String, day: String): Flow<List<AppUsage>> =
+        appUsageDao.observeByDay(sourceId, day)
 
-    suspend fun appUsageOfDayOnce(day: String): List<AppUsage> = appUsageDao.getByDay(day)
+    suspend fun appUsageOfDayOnce(sourceId: String, day: String): List<AppUsage> =
+        appUsageDao.getByDay(sourceId, day)
 
-    fun appSessionsOfDay(day: String): Flow<List<AppSession>> = appSessionDao.observeByDay(day)
+    fun appSessionsOfDay(sourceId: String, day: String): Flow<List<AppSession>> =
+        appSessionDao.observeByDay(sourceId, day)
 
-    suspend fun appSessionsOfDayOnce(day: String): List<AppSession> = appSessionDao.getByDay(day)
+    suspend fun appSessionsOfDayOnce(sourceId: String, day: String): List<AppSession> =
+        appSessionDao.getByDay(sourceId, day)
 
     // ── 报备事件流 ────────────────────────────────────────────────────────────
 
@@ -350,6 +381,11 @@ class TrackRepository(private val context: Context) {
         eventDao.deleteSource(sourceId)
         pointDao.deleteSource(sourceId)
         snapshotDao.deleteSource(sourceId)
+        // 这三张表 v6 起也有 sourceId，删来源时必须一起清，
+        // 否则删掉来源后它的 App 排行 / 时间线 / 汇总会一直留在库里。
+        appUsageDao.deleteSource(sourceId)
+        appSessionDao.deleteSource(sourceId)
+        summaryDao.deleteSource(sourceId)
         sourceDao.delete(sourceId)
     }
 
@@ -361,29 +397,27 @@ class TrackRepository(private val context: Context) {
      * 否则历史页还挂着已经不存在的里程。
      */
     suspend fun clearLocalData() {
-        // 先收集涉及的日子，清完要按这些日子重算汇总
+        // 先收集涉及的日子，清完要按这些日子重算汇总。
+        // 这几张表 v6 起都带 sourceId，全部按本机过滤。
         val days = (
             pointDao.daysOfSource(LOCAL_SOURCE) +
                 eventDao.daysOfSource(LOCAL_SOURCE) +
-                snapshotDao.days()
+                snapshotDao.daysOfSource(LOCAL_SOURCE) +
+                appUsageDao.daysOfSource(LOCAL_SOURCE) +
+                appSessionDao.daysOfSource(LOCAL_SOURCE)
             ).distinct().filter { it.isNotBlank() }
 
         eventDao.deleteSource(LOCAL_SOURCE)
         pointDao.deleteSource(LOCAL_SOURCE)
+        snapshotDao.deleteSource(LOCAL_SOURCE)
+        appUsageDao.deleteSource(LOCAL_SOURCE)
+        appSessionDao.deleteSource(LOCAL_SOURCE)
 
-        // ⚠️ 下面三张表按 dayKey 存、没有 sourceId，deleteSource 碰不到它们。
-        // 之前只删了 event_log 和 track_points，导致「清空本机数据」之后
-        // App 排行、时间线、电量/屏幕快照全部留着旧数据 —— 看起来没清掉。
-        //
-        // 这三张表本来就只存本机数据（导入包不写入它们），所以整表清空即可。
-        appUsageDao.deleteAll()
-        appSessionDao.deleteAll()
-        snapshotDao.deleteAll()
+        // 汇总表按 (sourceId, dayKey) 存，同样只删本机 ——
+        // 导入来源的行必须留着，否则「清空本机数据」会把对方的数据也抹掉。
+        summaryDao.deleteSource(LOCAL_SOURCE)
 
-        // 汇总表（daily_summary）按天存、没有 sourceId，
-        // 直接用 refreshSummary 重算会把它清成 0（点数和里程都没了）。
-        // 这里对每个涉及的日子重算本机数据即可 —— 导入来源的行不受影响，
-        // 因为 refreshSummary 只读 sourceId=LOCAL 的点和快照。
+        // 删完按涉及的日子重算本机汇总（重算会重新 INSERT 本机行）。
         days.forEach { refreshSummary(LOCAL_SOURCE, it) }
     }
 
@@ -408,9 +442,9 @@ class TrackRepository(private val context: Context) {
         val appSessions = ArrayList<AppSession>()
         val snapshots = ArrayList<DeviceSnapshot>()
         daysCovered.forEach { d ->
-            appUsage.addAll(appUsageDao.getByDay(d))
-            appSessions.addAll(appSessionDao.getByDay(d))
-            snapshots.addAll(snapshotDao.getByDay(d))
+            appUsage.addAll(appUsageDao.getByDay(LOCAL_SOURCE, d))
+            appSessions.addAll(appSessionDao.getByDay(LOCAL_SOURCE, d))
+            snapshots.addAll(snapshotDao.getByDay(LOCAL_SOURCE, d))
         }
 
         return BackupCodec.Bundle(
@@ -439,9 +473,23 @@ class TrackRepository(private val context: Context) {
         pointDao.deleteSource(bundle.sourceId)
 
         snapshotDao.deleteSource(bundle.sourceId)
+        // v6 起这三张表也带 sourceId，重复导入必须一并清掉旧的一份，
+        // 否则改了 packageName / 日期范围的话会残留上一版的行。
+        appUsageDao.deleteSource(bundle.sourceId)
+        appSessionDao.deleteSource(bundle.sourceId)
+        summaryDao.deleteSource(bundle.sourceId)
 
         if (bundle.points.isNotEmpty()) pointDao.insertAll(bundle.points)
         if (bundle.events.isNotEmpty()) eventDao.insertAll(bundle.events)
+
+        // App 排行与前台片段也要落库 —— 导出包里一直带着它们，
+        // 但导入端此前直接丢弃，导致切到对方后「今日 App 使用」和
+        // 历史页的时段柱状图永远为空。
+        //
+        // decode 时已经给每条的 sourceId / id 打上了本次导入的来源标识，
+        // 这里直接插入即可，不会和本机数据撞。用 REPLACE 保证重复导入幂等。
+        if (bundle.appUsage.isNotEmpty()) appUsageDao.upsertAll(bundle.appUsage)
+        if (bundle.appSessions.isNotEmpty()) appSessionDao.insertAll(bundle.appSessions)
         // 快照也要落库 —— 导出包里一直带着它，但导入端此前直接丢弃，
         // 导致切到对方后顶部看不到电量 / 网络。
         //
@@ -451,9 +499,15 @@ class TrackRepository(private val context: Context) {
             snapshotDao.insertAll(bundle.snapshots.map { it.copy(id = 0) })
         }
 
-        val daysCovered = (bundle.points.map { it.dayKey } + bundle.events.map { it.dayKey })
-            .filter { it.isNotBlank() }
-            .sorted()
+        // 覆盖到的日期：四类数据全算上。
+        // 只算点和事件的话，「对方没给定位、包里只有 App 使用记录」
+        // 这种情况下 daysCovered 会是空的，来源卡上显示「无覆盖日期」。
+        val daysCovered = (
+            bundle.points.map { it.dayKey } +
+                bundle.events.map { it.dayKey } +
+                bundle.appSessions.map { it.dayKey } +
+                bundle.appUsage.map { it.dayKey }
+            ).filter { it.isNotBlank() }.distinct().sorted()
 
         val source = ImportedSource(
             sourceId = bundle.sourceId,
@@ -466,22 +520,26 @@ class TrackRepository(private val context: Context) {
         )
         sourceDao.upsert(source)
 
-        // 重算导入数据涉及的每一天的汇总
-        daysCovered.distinct().forEach { refreshSummary(bundle.sourceId, it) }
+        // 汇总每天一份（含只有 App 数据、没有轨迹点的那些天）。
+        daysCovered.forEach { refreshSummary(bundle.sourceId, it) }
 
         return source
     }
 
     // ── 汇总 ──────────────────────────────────────────────────────────────────
 
-    fun summaryOfDay(day: String): Flow<DailySummary?> = summaryDao.observeDay(day)
+    fun summaryOfDay(sourceId: String, day: String): Flow<DailySummary?> =
+        summaryDao.observeDay(sourceId, day)
 
-    fun allSummaries(): Flow<List<DailySummary>> = summaryDao.observeAll()
+    fun allSummaries(sourceId: String): Flow<List<DailySummary>> = summaryDao.observeAll(sourceId)
 
     /** 重算某来源某天的距离 / 点数 / 汇总。 */
     suspend fun refreshSummary(sourceId: String, day: String) {
         val points = pointDao.getByDay(sourceId, day)
-        val latestSnapshot = snapshotDao.latest()
+        // ⚠️ 必须取「该来源」的最近一条快照。
+        // 之前用无来源的 snapshotDao.latest()，重算对方某天汇总时会
+        // 读到本机的电量 / 屏幕时长，对方的汇总显示成本机数字。
+        val latestSnapshot = snapshotDao.latestOf(sourceId)
 
         var distance = 0.0
         var prev: TrackPoint? = null
@@ -499,6 +557,7 @@ class TrackRepository(private val context: Context) {
         val todaySnapshot = if (latestSnapshot?.dayKey == day) latestSnapshot else null
         summaryDao.upsert(
             DailySummary(
+                sourceId = sourceId,
                 dayKey = day,
                 totalDistanceMeters = distance,
                 pointCount = points.size,
@@ -557,10 +616,11 @@ class TrackRepository(private val context: Context) {
     /** 清理 N 天前的本机数据。 */
     suspend fun purgeOlderThan(days: Int) {
         val cutoff = System.currentTimeMillis() - days * 24L * 3600_000
+        // 只清本机：导入的对方数据由用户自己决定何时删（来源列表里删）。
         pointDao.deleteOlderThan(cutoff)
         snapshotDao.deleteOlderThan(cutoff)
-        appUsageDao.deleteBeforeDay(TimeUtil.dayKey(cutoff))
-        appSessionDao.deleteBeforeDay(TimeUtil.dayKey(cutoff))
+        appUsageDao.deleteBeforeDay(LOCAL_SOURCE, TimeUtil.dayKey(cutoff))
+        appSessionDao.deleteBeforeDay(LOCAL_SOURCE, TimeUtil.dayKey(cutoff))
     }
 
     companion object {

@@ -66,10 +66,22 @@ data class DeviceSnapshot(
     val networkName: String = "",
 )
 
-/** 按天汇总。 */
-@Entity(tableName = "daily_summary")
+/**
+ * 按天汇总。
+ *
+ * 主键是 (sourceId, dayKey)：本机和每个导入来源各自一天一行。
+ * 之前只有 dayKey，导入对方数据后对方的汇总会覆盖本机的 ——
+ * 历史页显示陌生里程就是这么来的。
+ */
+@Entity(
+    tableName = "daily_summary",
+    primaryKeys = ["sourceId", "dayKey"],
+    indices = [Index("sourceId")],
+)
 data class DailySummary(
-    @PrimaryKey val dayKey: String,
+    /** 数据来源：本机 = LOCAL，导入的对方数据 = 对应 sourceId。 */
+    val sourceId: String = LOCAL_SOURCE,
+    val dayKey: String,
     val totalDistanceMeters: Double,
     val pointCount: Int,
     val unlockCount: Int,
@@ -77,13 +89,21 @@ data class DailySummary(
     val firstSeen: Long,
     val lastSeen: Long,
 )
-/** 某个 App 在某天的使用时长。 */
+
+/**
+ * 某个 App 在某天的使用时长。
+ *
+ * 主键含 [sourceId]：导入的对方数据包也带 App 排行，
+ * 不带来源就会被本机同一天的记录覆盖（或反过来）。
+ */
 @Entity(
     tableName = "app_usage",
-    primaryKeys = ["dayKey", "packageName"],
-    indices = [Index("dayKey")],
+    primaryKeys = ["sourceId", "dayKey", "packageName"],
+    indices = [Index("dayKey"), Index("sourceId")],
 )
 data class AppUsage(
+    /** 数据来源：本机 = LOCAL，导入的对方数据 = 对应 sourceId。 */
+    val sourceId: String = LOCAL_SOURCE,
     val dayKey: String,
     val packageName: String,
     val appLabel: String,
@@ -102,11 +122,18 @@ data class AppUsage(
 @Entity(
     tableName = "app_session",
     primaryKeys = ["id"],
-    indices = [Index("dayKey"), Index("startAt")],
+    indices = [Index("dayKey"), Index("startAt"), Index("sourceId")],
 )
 data class AppSession(
-    /** startAt 与包名组合的稳定 id，避免重复插入。 */
+    /**
+     * 稳定 id，避免重复插入：`"${sourceId}:${startAt}:${packageName}"`。
+     *
+     * 必须带 [sourceId] —— 导入的对方数据里同一个时刻开着同一个 App 是很可能的，
+     * 不带来源两边会撞成同一条，后写的把先写的顶掉。
+     */
     val id: String,
+    /** 数据来源：本机 = LOCAL，导入的对方数据 = 对应 sourceId。 */
+    val sourceId: String = LOCAL_SOURCE,
     val dayKey: String,
     val packageName: String,
     val appLabel: String,

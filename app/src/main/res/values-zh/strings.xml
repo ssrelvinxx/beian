@@ -161,6 +161,7 @@
     <string name="report_app_usage">今日 App 使用</string>
     <string name="report_app_usage_total">共 %1$s</string>
     <string name="report_app_usage_empty">暂无数据 — 请在设置里授予「使用情况访问」</string>
+    <string name="report_app_usage_peer_empty">这份数据包里没有 App 使用记录</string>
     <string name="report_peer_no_app_usage">App 使用排行不在共享的数据包内</string>
     <string name="report_start_recording">开始记录</string>
     <string name="report_recording_on">正在记录</string>

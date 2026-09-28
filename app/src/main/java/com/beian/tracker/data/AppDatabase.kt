@@ -10,7 +10,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [TrackPoint::class, DeviceSnapshot::class, DailySummary::class, AppUsage::class, AppSession::class, EventLog::class, ImportedSource::class],
-    version = 5,
+    version = 6,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -51,6 +51,112 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v5 → v6：app_usage / app_session / daily_summary 三张表新增 sourceId，
+         * 并把 sourceId 并入主键。
+         *
+         * 为什么必须重建表：SQLite 的 ALTER TABLE 只能加列、改名、删列，
+         * **不能改主键**。这三张表原本的主键分别是
+         * (dayKey, packageName)、(id)、(dayKey)，都不含来源，
+         * 导入对方数据包后会和本机同一天的记录直接撞车。
+         *
+         * 老数据全部是本机采集的（导入功能此前不写这三张表），
+         * 所以一律补 LOCAL，主键扩展成 (sourceId, ...) 后不会丢任何一行。
+         *
+         * 重建步骤按 SQLite 官方推荐的 12 步顺序，只保留必要的：
+         * 建新表 → 拷数据 → 删旧表 → 改名 → 建索引。
+         * Room 会把整个迁移包在一个事务里执行，这里不再自己开事务
+         * （嵌套事务容易踩坑，且没有额外好处）。
+         */
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // ── app_usage ──────────────────────────────────────────────
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS app_usage_new (
+                        sourceId TEXT NOT NULL,
+                        dayKey TEXT NOT NULL,
+                        packageName TEXT NOT NULL,
+                        appLabel TEXT NOT NULL,
+                        usageMs INTEGER NOT NULL,
+                        launchCount INTEGER NOT NULL,
+                        lastUsed INTEGER NOT NULL,
+                        PRIMARY KEY(sourceId, dayKey, packageName)
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "INSERT OR REPLACE INTO app_usage_new " +
+                        "(sourceId, dayKey, packageName, appLabel, usageMs, launchCount, lastUsed) " +
+                        "SELECT '$LOCAL_SOURCE', dayKey, packageName, appLabel, usageMs, launchCount, lastUsed " +
+                        "FROM app_usage",
+                )
+                db.execSQL("DROP TABLE app_usage")
+                db.execSQL("ALTER TABLE app_usage_new RENAME TO app_usage")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_app_usage_dayKey ON app_usage (dayKey)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_app_usage_sourceId ON app_usage (sourceId)")
+
+                // ── app_session ───────────────────────────────────────────
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS app_session_new (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        sourceId TEXT NOT NULL,
+                        dayKey TEXT NOT NULL,
+                        packageName TEXT NOT NULL,
+                        appLabel TEXT NOT NULL,
+                        startAt INTEGER NOT NULL,
+                        endAt INTEGER NOT NULL,
+                        durationMs INTEGER NOT NULL
+                    )
+                    """.trimIndent(),
+                )
+                // id 也要补来源前缀，否则和将来导入的对方记录撞 id。
+                db.execSQL(
+                    "INSERT OR REPLACE INTO app_session_new " +
+                        "(id, sourceId, dayKey, packageName, appLabel, startAt, endAt, durationMs) " +
+                        "SELECT '$LOCAL_SOURCE' || ':' || id, '$LOCAL_SOURCE', dayKey, packageName, " +
+                        "appLabel, startAt, endAt, durationMs FROM app_session",
+                )
+                db.execSQL("DROP TABLE app_session")
+                db.execSQL("ALTER TABLE app_session_new RENAME TO app_session")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_app_session_dayKey ON app_session (dayKey)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_app_session_startAt ON app_session (startAt)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_app_session_sourceId ON app_session (sourceId)")
+
+                // ── daily_summary ─────────────────────────────────────────
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS daily_summary_new (
+                        sourceId TEXT NOT NULL,
+                        dayKey TEXT NOT NULL,
+                        totalDistanceMeters REAL NOT NULL,
+                        pointCount INTEGER NOT NULL,
+                        unlockCount INTEGER NOT NULL,
+                        screenTimeMs INTEGER NOT NULL,
+                        firstSeen INTEGER NOT NULL,
+                        lastSeen INTEGER NOT NULL,
+                        PRIMARY KEY(sourceId, dayKey)
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "INSERT OR REPLACE INTO daily_summary_new " +
+                        "(sourceId, dayKey, totalDistanceMeters, pointCount, unlockCount, " +
+                        "screenTimeMs, firstSeen, lastSeen) " +
+                        "SELECT '$LOCAL_SOURCE', dayKey, totalDistanceMeters, pointCount, unlockCount, " +
+                        "screenTimeMs, firstSeen, lastSeen FROM daily_summary",
+                )
+                db.execSQL("DROP TABLE daily_summary")
+                db.execSQL("ALTER TABLE daily_summary_new RENAME TO daily_summary")
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_daily_summary_sourceId " +
+                        "ON daily_summary (sourceId)",
+                )
+
+            }
+        }
+
         @Volatile
         private var instance: AppDatabase? = null
 
@@ -60,7 +166,7 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "beian.db",
-                ).addMigrations(MIGRATION_4_5)
+                ).addMigrations(MIGRATION_4_5, MIGRATION_5_6)
                     // ── WAL：卡顿的关键 ──────────────────────────────────────
                     //
                     // 默认日志模式（TRUNCATE）下，读事务和写事务互斥：

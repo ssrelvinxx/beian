@@ -112,16 +112,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         .flatMapLatest { (s, d) -> repository.pointsOfDay(s, d) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    val todaySummary: StateFlow<DailySummary?> = _selectedDay
-        .flatMapLatest { repository.summaryOfDay(it) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+    val todaySummary: StateFlow<DailySummary?> =
+        combine(_sourceId, _selectedDay) { s, d -> s to d }
+            .flatMapLatest { (s, d) -> repository.summaryOfDay(s, d) }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /** 当前来源有数据的日期列表。 */
     val allDays: StateFlow<List<String>> = _sourceId
         .flatMapLatest { repository.observedDays(it) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    val allSummaries: StateFlow<List<DailySummary>> = repository.allSummaries()
+    val allSummaries: StateFlow<List<DailySummary>> = _sourceId
+        .flatMapLatest { repository.allSummaries(it) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     // ── App 使用 ──────────────────────────────────────────────────────────────
@@ -140,8 +142,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      */
     val selfPackageName: String = app.packageName
 
-    val appUsage: StateFlow<List<AppUsage>> = _selectedDay
-        .flatMapLatest { repository.appUsageOfDay(it) }
+    val appUsage: StateFlow<List<AppUsage>> = combine(_sourceId, _selectedDay) { s, d -> s to d }
+        .flatMapLatest { (s, d) -> repository.appUsageOfDay(s, d) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /**
@@ -151,8 +153,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * 展示时必须滤掉，否则排行第一永远是「桌面」。
      * 用 [AppEventDeriver.isReportable] 与事件流保持同一套规则。
      */
-    val reportableAppUsage: StateFlow<List<AppUsage>> = _selectedDay
-        .flatMapLatest { repository.appUsageOfDay(it) }
+    val reportableAppUsage: StateFlow<List<AppUsage>> = combine(_sourceId, _selectedDay) { s, d -> s to d }
+        .flatMapLatest { (s, d) -> repository.appUsageOfDay(s, d) }
         .map { list ->
             list.filter { AppEventDeriver.isReportable(it.packageName, selfPackageName) }
                 .filter { it.usageMs > 0 }
@@ -161,19 +163,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
 
-    val appSessions: StateFlow<List<AppSession>> = _selectedDay
-        .flatMapLatest { repository.appSessionsOfDay(it) }
+    val appSessions: StateFlow<List<AppSession>> = combine(_sourceId, _selectedDay) { s, d -> s to d }
+        .flatMapLatest { (s, d) -> repository.appSessionsOfDay(s, d) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /**
-     * 当前选中日期的 App 片段，供历史页的时段柱状图使用。
+     * 当前来源、当前日期的 App 片段，供历史页的时段柱状图使用。
      *
-     * 注意：app_session 表没有 sourceId，导入的数据包里也不含这项，
-     * 所以这里永远只有本机数据。看对方的数据包时柱状图会显示为空 ——
-     * 那不是 bug，是数据本身不存在。
+     * v6 起 app_session 带 sourceId，导出包也含这一项，
+     * 所以看对方数据时柱状图同样有内容。
      */
-    val hourlySessions: StateFlow<List<AppSession>> = _selectedDay
-        .flatMapLatest { repository.appSessionsOfDay(it) }
+    val hourlySessions: StateFlow<List<AppSession>> = combine(_sourceId, _selectedDay) { s, d -> s to d }
+        .flatMapLatest { (s, d) -> repository.appSessionsOfDay(s, d) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /**
@@ -492,14 +493,22 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         return distance
     }
 
-    suspend fun snapshotsOfDayOnce(day: String): List<DeviceSnapshot> =
-        repository.snapshotsOfDay(day).first()
+    suspend fun snapshotsOfDayOnce(sourceId: String, day: String): List<DeviceSnapshot> =
+        repository.snapshotsOfDay(sourceId, day).first()
 
-    suspend fun appUsageOfDayOnce(day: String): List<AppUsage> =
-        repository.appUsageOfDayOnce(day)
+    suspend fun appUsageOfDayOnce(sourceId: String, day: String): List<AppUsage> =
+        repository.appUsageOfDayOnce(sourceId, day)
 
-    suspend fun appSessionsOfDayOnce(day: String): List<AppSession> =
-        repository.appSessionsOfDayOnce(day)
+    /**
+     * 某来源某天的 App 片段（历史页展开某天时调用）。
+     *
+     * 默认取当前查看的来源：调用点从界面来，传 [sourceId] 更明确，
+     * 但漏传时跟着当前选择走也比固定本机合理。
+     */
+    suspend fun appSessionsOfDayOnce(
+        day: String,
+        sourceId: String = _sourceId.value,
+    ): List<AppSession> = repository.appSessionsOfDayOnce(sourceId, day)
 
     suspend fun eventsOfDayOnce(sourceId: String, day: String): List<EventLog> =
         repository.eventsOfDayOnce(sourceId, day)
