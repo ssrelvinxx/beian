@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -32,7 +31,6 @@ fun HistoryScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     val days by vm.allDays.collectAsStateWithLifecycle()
     val summaries by vm.allSummaries.collectAsStateWithLifecycle()
     val selected by vm.selectedDay.collectAsStateWithLifecycle()
-    val points by vm.todayPoints.collectAsStateWithLifecycle()
     val hourlySessions by vm.hourlySessions.collectAsStateWithLifecycle()
     val selfPkg = vm.selfPackageName
 
@@ -50,13 +48,6 @@ fun HistoryScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(text = stringResource(R.string.history_title), style = MaterialTheme.typography.headlineSmall)
-
-        TrackMapView(
-            points = points,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(260.dp),
-        )
 
         Text(
             text = "${stringResource(R.string.history_day_detail)}: $selected",

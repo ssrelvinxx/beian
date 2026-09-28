@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.RoomDatabase.JournalMode
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
@@ -60,6 +61,20 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "beian.db",
                 ).addMigrations(MIGRATION_4_5)
+                    // ── WAL：卡顿的关键 ──────────────────────────────────────
+                    //
+                    // 默认日志模式（TRUNCATE）下，读事务和写事务互斥：
+                    // 采集服务每 60 秒做一次 replaceDay（DELETE 当天全部 + 重插，
+                    // 两张表两个事务），这期间 UI 的任何查询（历史页读片段、
+                    // 报备页读事件）都得排队等锁 —— 表现就是切页面卡顿。
+                    //
+                    // WAL 让读和写可以并发：写只改 .wal 文件，读走自己的快照，
+                    // 互不阻塞。这是采集 + 界面同进程读写场景的标准做法。
+                    //
+                    // synchronous=NORMAL 是 WAL 下的推荐值：崩溃不丢已提交事务
+                    // （断电才可能丢最后几条），换取明显的写入性能提升。
+                    // 采集数据属于「丢了不影响正确性」，这个取舍是合适的。
+                    .setJournalMode(JournalMode.WRITE_AHEAD_LOGGING)
                     // 兜底：将来再加字段忘了写迁移时，宁可清库也不要崩溃。
                     // 新增迁移后请优先补显式 Migration，别依赖这条。
                     .fallbackToDestructiveMigration()

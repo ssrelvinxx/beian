@@ -66,6 +66,11 @@ fun StartRecordingCard(
     val hasBackground = remember(permissionRevision) {
         PermissionCheck.hasBackgroundLocation(context)
     }
+    // 「使用情况访问」是特殊权限，不能用 requestPermissions 申请，只能引导去设置页。
+    // 少了它 App 记录会整段消失（UsageStats 静默返回空），所以单独判断。
+    val hasUsage = remember(permissionRevision) {
+        PermissionCheck.hasUsageAccess(context)
+    }
 
     // 记录用户是否已经同意继续（缺后台定位时用来决定显示哪段提示）
     var askedBackground by remember { mutableStateOf(false) }
@@ -135,6 +140,35 @@ fun StartRecordingCard(
                         },
                     ) {
                         Text(stringResource(R.string.report_perm_go_settings))
+                    }
+                }
+
+                // 普通权限齐了，但「使用情况访问」没开。
+                //
+                // 不在这里直接开记录：没有它 App 记录一条都不会有，
+                // 用户会以为「开始记录没用」。先把权限补上再放行。
+                !hasUsage -> {
+                    Text(
+                        text = stringResource(R.string.report_perm_usage_needed),
+                        style = MaterialTheme.typography.titleSmall,
+                    )
+                    Text(
+                        text = stringResource(R.string.report_perm_usage_desc),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Button(
+                        onClick = {
+                            PermissionCheck.openUsageAccessSettings(context)
+                            permissionRevision++
+                        },
+                    ) {
+                        Text(stringResource(R.string.report_perm_go_settings))
+                    }
+                    // 允许用户跳过：不给这项权限仍能记录轨迹/屏幕/网络事件，
+                    // 只是没有 App 使用记录。不该强行卡死。
+                    TextButton(onClick = { startTracking() }) {
+                        Text(stringResource(R.string.report_perm_usage_skip))
                     }
                 }
 

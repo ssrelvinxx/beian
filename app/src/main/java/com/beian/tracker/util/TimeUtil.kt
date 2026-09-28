@@ -40,6 +40,26 @@ object TimeUtil {
     }
 
     /**
+     * 超短时长格式化，给柱状图纵轴标签用。
+     *
+     * 柱子上只有几十 dp 的宽度，放不下「1小时20分」这种；
+     * 这里压缩成「1h20」「45m」「0」这类形式。
+     * 不满 1 分钟但确实有值时显示 "<1m"，避免看起来像没有数据。
+     */
+    fun formatCompact(ms: Long): String {
+        if (ms <= 0) return "0"
+        if (ms < 60_000) return "<1m"
+        val totalMinutes = ms / 60_000
+        val hours = totalMinutes / 60
+        val minutes = totalMinutes % 60
+        return when {
+            hours > 0 && minutes > 0 -> "${hours}h${minutes}"
+            hours > 0 -> "${hours}h"
+            else -> "${minutes}m"
+        }
+    }
+
+    /**
      * 短时长格式化，秒级精度 —— 用于「用了多久」这类不超过几分钟的场景。
      * 与 [formatDuration] 的区别：后者最小单位是分钟，30 秒会显示成 "0分"。
      */

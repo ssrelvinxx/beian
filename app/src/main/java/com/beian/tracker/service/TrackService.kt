@@ -24,6 +24,7 @@ import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
+import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -119,7 +120,17 @@ class TrackService : Service() {
         tickerJob?.cancel()
         tickerJob = scope.launch {
             while (true) {
-                repository.captureSnapshot()
+                // ⚠️ 必须逐次捕获。
+                //
+                // captureSnapshot() 里要做 UsageStats 全量查询 + 多张表的
+                // replaceDay（删除+插入）。任何一步抛异常（ROM 差异、
+                // 数据库锁、权限被撤），异常都会逃出 while 循环：
+                //   1. 这个协程直接结束 → 采集永久停止，界面上却还显示「正在记录」
+                //   2. 异常无人处理 → 传到 CoroutineExceptionHandler（没设）→ 崩溃
+                //
+                // 捕获后本轮跳过，下一轮继续，采集不会因为一次失败就断掉。
+                runCatching { repository.captureSnapshot() }
+                    .onFailure { Log.w(TAG, "captureSnapshot failed, skip this round", it) }
                 delay(intervalSec * 1000L)
             }
         }
@@ -209,6 +220,7 @@ class TrackService : Service() {
     companion object {
         const val ACTION_START = "com.beian.tracker.START"
         const val ACTION_STOP = "com.beian.tracker.STOP"
+        private const val TAG = "TrackService"
         private const val CHANNEL_ID = "beian_tracking"
         private const val NOTIF_ID = 1001
 

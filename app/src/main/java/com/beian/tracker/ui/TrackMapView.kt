@@ -20,7 +20,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.beian.tracker.R
 import com.beian.tracker.data.TrackPoint
 import com.beian.tracker.util.MapTileStore
-import org.osmdroid.tileprovider.tilesource.TileSourceFactory
+import com.beian.tracker.util.AmapTileSource
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
@@ -71,7 +71,10 @@ fun TrackMapView(
 
     val mapView = remember {
         MapView(context).apply {
-            setTileSource(TileSourceFactory.MAPNIK)
+            // 用高德源：OSM 官方域名国内连不上（瓦片根本下不来，地图空白），
+            // 且即便下到也几乎没有中文地名。高德同为 Slippy Map 编号，
+            // 换源不会偏移，能显示中文路名/地名/地铁线。详见 AmapTileSource 注释。
+            setTileSource(AmapTileSource())
             setMultiTouchControls(true)
             // 无瓦片时的背景色，避免死黑/纯白
             setBackgroundColor(Color.parseColor("#FFEFE6EA"))

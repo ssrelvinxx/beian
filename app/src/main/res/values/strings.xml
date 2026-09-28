@@ -28,6 +28,8 @@
     <string name="history_empty">No records yet</string>
     <string name="history_hourly_title">Usage by hour</string>
     <string name="history_hourly_empty">No session data for this day</string>
+    <string name="history_hourly_hint">Swipe sideways · tap a bar to see which apps</string>
+    <string name="history_hourly_detail">%1$d:00 — apps used</string>
     <string name="history_hourly_peak">Busiest hour: %1$s</string>
     <string name="history_hourly_axis">0h — 6h — 12h — 18h — 24h</string>
     <string name="history_points">%1$d pts</string>
@@ -165,6 +167,9 @@
     <string name="report_perm_needed">Permissions needed before recording</string>
     <string name="report_perm_desc">Tap to grant the missing permissions</string>
     <string name="report_perm_background_hint">Allow "Always" location so recording survives screen-off</string>
+    <string name="report_perm_usage_needed">Usage access is off</string>
+    <string name="report_perm_usage_desc">App usage records need this — without it you will only see screen and network events</string>
+    <string name="report_perm_usage_skip">Skip for now</string>
     <string name="report_perm_go_settings">Open settings</string>
     <string name="report_app_usage_more">Show %1$d more</string>
     <string name="report_app_usage_less">Show less</string>

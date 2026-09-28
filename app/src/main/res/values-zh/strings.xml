@@ -28,6 +28,8 @@
     <string name="history_empty">暂无记录</string>
     <string name="history_hourly_title">各时段使用情况</string>
     <string name="history_hourly_empty">这一天没有使用记录</string>
+    <string name="history_hourly_hint">左右滑动查看 · 点柱子看该小时用了哪些 App</string>
+    <string name="history_hourly_detail">%1$d 时 — 使用的 App</string>
     <string name="history_hourly_peak">最活跃时段：%1$s</string>
     <string name="history_hourly_axis">0 时 — 6 时 — 12 时 — 18 时 — 24 时</string>
     <string name="history_points">%1$d 点</string>
@@ -165,6 +167,9 @@
     <string name="report_perm_needed">开始前需要先授权</string>
     <string name="report_perm_desc">点这里补齐缺少的权限</string>
     <string name="report_perm_background_hint">建议把定位设为「始终允许」，否则息屏后会断点</string>
+    <string name="report_perm_usage_needed">「使用情况访问」未开启</string>
+    <string name="report_perm_usage_desc">不开这项就没有 App 使用记录，只会记到屏幕和网络事件</string>
+    <string name="report_perm_usage_skip">暂时跳过</string>
     <string name="report_perm_go_settings">去设置</string>
     <string name="report_app_usage_more">展开其余 %1$d 个</string>
     <string name="report_app_usage_less">收起</string>

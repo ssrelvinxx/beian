@@ -27,6 +27,45 @@ class TrackRepository(private val context: Context) {
     private val eventDao = db.eventLogDao()
     private val sourceDao = db.importedSourceDao()
 
+    /**
+     * 上一轮写入的 App 片段指纹（条数 to 最后一条开始时间）。
+     *
+     * 用来跳过「数据没变」时的 replaceDay 重写 —— 那个操作是删全表再插，
+     * 每 60 秒跑一次纯属浪费，还会占住写锁拖慢界面。
+     *
+     * 只在采集线程（TrackService 的 ticker 协程）读写，单线程访问，
+     * 用 @Volatile 保证可见性即可，不需要加锁。
+     *
+     * 跨天时由 [fingerprintDay] 判断并重置，否则「昨天末条 == 今天首条」
+     * 这类巧合会让新一天的数据被误判为「没变」而跳过写入。
+     */
+    @Volatile
+    private var lastSessionFingerprint: Triple<Int, Long, Long>? = null
+
+    /**
+     * 上一轮写入的 App 使用排行指纹（条数 to usageMs 总和）。
+     *
+     * 不能只用「条数 + 最后开始时间」：AppUsage 里没有开始时间，
+     * 而且「一直用同一个 App」时条数不变、只有 usageMs 在涨。
+     */
+    @Volatile
+    private var lastUsageFingerprint: Pair<Int, Long>? = null
+
+    @Volatile
+    private var fingerprintDay: String? = null
+
+    /**
+     * 跨天时清空指纹。两段采集（使用排行 / 前台片段）共用同一个 day 判断，
+     * 所以只在方法开头调一次 —— 分别重置会让后一处把前一处刚设好的值又清掉。
+     */
+    private fun resetFingerprintIfNewDay(day: String) {
+        if (fingerprintDay != day) {
+            fingerprintDay = day
+            lastSessionFingerprint = null
+            lastUsageFingerprint = null
+        }
+    }
+
     // ── 轨迹点 ────────────────────────────────────────────────────────────────
 
     suspend fun recordPoint(location: Location) {
@@ -70,60 +109,87 @@ class TrackRepository(private val context: Context) {
         val usage = UsageStatsReader.today(context)
         val screenOn = DeviceInfo.isScreenOn(context)
 
+        // 跨天必须重置指纹：它只比对「有没有变」，不认日期。
+        // 否则新一天恰好条数相同（或两段都是空列表）时会被误判成「没变」，
+        // 当天数据一条都不落地。两段共用这一次重置，见方法注释。
+        resetFingerprintIfNewDay(day)
+
         // ── 各 App 当日使用情况 ────────────────────────────────────────────────
         // 注意：查询可能因为「没有权限」而返回空。此时**不能**照常替换，
         // 否则权限一被撤销就会把当天已采到的数据清空。
         val usageUsable = UsageStatsReader.hasPermission(context)
         if (usageUsable) {
             val perApp = UsageStatsReader.todayPerApp(context)
-            appUsageDao.replaceDay(
-                day,
-                perApp.map {
-                    AppUsage(
-                        dayKey = day,
-                        packageName = it.packageName,
-                        appLabel = it.appLabel,
-                        usageMs = it.usageMs,
-                        launchCount = it.launchCount,
-                        lastUsed = it.lastUsed,
-                    )
-                },
-            )
+            // 同 AppSession：没变就别重写（replaceDay 是删表再插，占写锁）。
+            // 指纹取「条数 + usageMs 总和」—— 条数反映 App 增减，
+            // usageMs 总和反映已列出 App 的时长增长。只看条数会漏掉
+            // 「一直在用同一个 App」的时长更新。
+            val usageFingerprint = perApp.size to perApp.sumOf { it.usageMs }
+            if (usageFingerprint != lastUsageFingerprint) {
+                lastUsageFingerprint = usageFingerprint
+                appUsageDao.replaceDay(
+                    day,
+                    perApp.map {
+                        AppUsage(
+                            dayKey = day,
+                            packageName = it.packageName,
+                            appLabel = it.appLabel,
+                            usageMs = it.usageMs,
+                            launchCount = it.launchCount,
+                            lastUsed = it.lastUsed,
+                        )
+                    },
+                )
+            }
         }
 
         // ── 今日 App 前台片段（时间线 + 报备事件）──────────────────────────────
         if (usageUsable) {
             val sessions = UsageStatsReader.todaySessions(context)
-            appSessionDao.replaceDay(
-                day,
-                sessions.map {
-                    AppSession(
-                        id = "${it.startAt}:${it.packageName}",
-                        dayKey = day,
-                        packageName = it.packageName,
-                        appLabel = it.appLabel,
-                        startAt = it.startAt,
-                        endAt = it.endAt,
-                        durationMs = it.durationMs,
-                    )
-                },
-            )
+            // ⚠️ 性能：replaceDay 是「DELETE 当天全部 + 重新插入」，
+            // 而轮询每 60 秒跑一次。当天片段数上百时，这是一天几万次的无谓重写，
+            // 期间还占着写锁，界面查询会被拖住（卡顿）。
+            //
+            // 片段集合只在「有新的 App 切换」时才变，但**正在使用中的那一条**
+            // 时长每轮都在增长（尾片的 durationMs 会一直涨，endAt 为 0），
+            // 所以指纹必须带上它的时长，否则「一直在用同一个 App」时
+            // 界面上的时长会停住不动。
+            val tail = sessions.lastOrNull()
+            val fingerprint = Triple(sessions.size, tail?.startAt ?: -1L, tail?.durationMs ?: -1L)
+            if (fingerprint != lastSessionFingerprint) {
+                lastSessionFingerprint = fingerprint
 
-            // 同一批片段转成「TA 打开了 XX」事件，写进报备流。
-            //
-            // ⚠️ 性能：UsageStats 每天会还原出上百个片段，而轮询每 60 秒跑一次。
-            // 如果每次都全量 insertAll，一天要写十几万次（内容还都一样）。
-            // 所以先查「已记到哪个时间点」，只处理它之后的片段。
-            //
-            // 会话的 startAt 是事件时间戳，天然有序，取历史最大值即可。
-            val lastAppOpenAt = eventDao.latestOfType(LOCAL_SOURCE, EventType.APP_OPEN)?.timestamp ?: 0L
-            val fresh = sessions.filter { it.startAt > lastAppOpenAt }
-            if (fresh.isNotEmpty()) {
-                val appEvents = AppEventDeriver.derive(
-                    sessions = fresh,
-                    selfPackage = context.packageName,
+                appSessionDao.replaceDay(
+                    day,
+                    sessions.map {
+                        AppSession(
+                            id = "${it.startAt}:${it.packageName}",
+                            dayKey = day,
+                            packageName = it.packageName,
+                            appLabel = it.appLabel,
+                            startAt = it.startAt,
+                            endAt = it.endAt,
+                            durationMs = it.durationMs,
+                        )
+                    },
                 )
-                if (appEvents.isNotEmpty()) eventDao.insertAll(appEvents)
+
+                // 同一批片段转成「TA 打开了 XX」事件，写进报备流。
+                //
+                // ⚠️ 性能：UsageStats 每天会还原出上百个片段，而轮询每 60 秒跑一次。
+                // 如果每次都全量 insertAll，一天要写十几万次（内容还都一样）。
+                // 所以先查「已记到哪个时间点」，只处理它之后的片段。
+                //
+                // 会话的 startAt 是事件时间戳，天然有序，取历史最大值即可。
+                val lastAppOpenAt = eventDao.latestOfType(LOCAL_SOURCE, EventType.APP_OPEN)?.timestamp ?: 0L
+                val fresh = sessions.filter { it.startAt > lastAppOpenAt }
+                if (fresh.isNotEmpty()) {
+                    val appEvents = AppEventDeriver.derive(
+                        sessions = fresh,
+                        selfPackage = context.packageName,
+                    )
+                    if (appEvents.isNotEmpty()) eventDao.insertAll(appEvents)
+                }
             }
         }
 

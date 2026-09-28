@@ -20,16 +20,21 @@ import kotlinx.coroutines.withContext
 /**
  * 瓦片预下载：把一个经纬度范围、若干缩放级别的 OSM 瓦片抓进本地缓存。
  *
- * 采用标准的 Slippy Map 编号（与 osmdroid 的 MAPNIK 一致）：
- *   https://tile.openstreetmap.org/{z}/{x}/{y}.png
+ * 采用标准的 Slippy Map 编号（z/x/y），与 osmdroid 的 [AmapTileSource] 一致 ——
+ * 预下载的瓦片能直接被地图组件命中，不用重新联网。
  *
- * ⚠️ OSM 官方瓦片服务有使用条款：请勿大批量抓取。这里限速 1 请求/秒左右，
- * 并限制单次下载的瓦片总数（[MAX_TILES]），只用于小范围个人轨迹。
+ * 缓存落盘位置：<tileCache>/Amap/<z>/<x>/<y>.png
+ *
+ * ⚠️ 瓦片来自高德公开栅格服务。它没有面向第三方的开放条款，
+ * 这里限速（[THROTTLE_MS]）并限制单次瓦片数（[MAX_TILES]），
+ * 仅服务个人自用的小范围轨迹回看。若要上架或商用，需改用官方 SDK 授权。
  */
 object TileDownloader {
 
-    private const val URL_TEMPLATE = "https://tile.openstreetmap.org/%d/%d/%d.png"
-    private const val USER_AGENT = "HuahuaOfflineMap/1.0"
+    /**
+     * 高德会拦截默认 UA，用浏览器标识。
+     */
+    private const val USER_AGENT = "Mozilla/5.0 (Android) HuahuaOfflineMap/1.0"
 
     /** 单次最多下载的瓦片数。 */
     const val MAX_TILES = 600
@@ -56,7 +61,9 @@ object TileDownloader {
         zoom: Int,
     ): List<Triple<Int, Int, Int>> {
         val out = ArrayList<Triple<Int, Int, Int>>()
-        for (z in MIN_ZOOM..zoom) {
+        // 钳制级别：超出高德可用范围只会在本地堆一堆空瓦片
+        val top = zoom.coerceIn(MIN_ZOOM, MAX_ZOOM)
+        for (z in MIN_ZOOM..top) {
             val n = 1 shl z
             val x0 = lonToTileX(minLon, z).coerceIn(0, n - 1)
             val x1 = lonToTileX(maxLon, z).coerceIn(0, n - 1)
@@ -119,15 +126,19 @@ object TileDownloader {
     // ── 内部 ─────────────────────────────────────────────────────────────────
 
     private fun tileFile(cacheDir: File, z: Int, x: Int, y: Int): File {
-        // osmdroid 默认 MAPNIK 的缓存目录结构
-        val dir = File(cacheDir, "Mapnik/$z/$x").apply { mkdirs() }
+        // ⚠️ 目录第一级必须等于瓦片源的 name()，即 AmapTileSource.NAME。
+        // osmdroid 按 <tileCache>/<name()>/z/x/y.png 找瓦片，
+        // 写错目录就变成「下载成功但地图还是空白」。
+        val dir = File(cacheDir, "${AmapTileSource.NAME}/$z/$x").apply { mkdirs() }
         return File(dir, "$y.png")
     }
 
     private fun fetch(cacheDir: File, z: Int, x: Int, y: Int): Boolean {
         var conn: HttpURLConnection? = null
         return try {
-            val url = URL(URL_TEMPLATE.format(z, x, y))
+            // 复用 AmapTileSource 的 URL 构造：预下载写盘的瓦片必须和
+            // 地图组件请求的是同一张图，逻辑分两份写迟早会走偏。
+            val url = URL(amapTileUrl(z, x, y))
             conn = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
                 connectTimeout = 10_000
@@ -151,6 +162,15 @@ object TileDownloader {
     // ── 坐标换算 ─────────────────────────────────────────────────────────────
 
     private const val MIN_ZOOM = 10
+
+    /**
+     * 能下载的最高级别。
+     *
+     * 直接引用 [AmapTileSource] 的上限，避免两处各写一个 18 ——
+     * 将来高德放开或被限制，只改那一处即可，不会出现
+     * 「地图能显示但下载被截断」这种不一致。
+     */
+    private val MAX_ZOOM = AmapTileSource.MAX_ZOOM
 
     /** 经度 → 瓦片 X。 */
     fun lonToTileX(lon: Double, z: Int): Int {
