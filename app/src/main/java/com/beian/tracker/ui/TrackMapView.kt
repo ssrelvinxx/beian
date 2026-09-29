@@ -25,6 +25,14 @@ import com.beian.tracker.R
 import com.beian.tracker.data.TrackPoint
 import com.beian.tracker.util.MapTileStore
 import com.beian.tracker.util.AmapTileSource
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.floor
+import kotlin.math.ln
+import kotlin.math.log2
+import kotlin.math.min
+import kotlin.math.tan
+import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
@@ -308,11 +316,55 @@ private fun drawTrack(
         )
     }
 
-    // 自动缩放到整条轨迹（含少量边距）
+    // ── 自动缩放到整条轨迹 ────────────────────────────────────────────────
+    //
+    // ⚠️ 这里**刻意不用** view.zoomToBoundingBox()。
+    //
+    // 实测（看门狗抓到的堆栈）：
+    //   TrackMapView.kt:315  view.zoomToBoundingBox(box, false, 48)
+    //     → Projection.getCloserPixel(Projection.java:492)  ← 卡在这里
+    //   触发自 AndroidView 的 update 块（onAttachedToWindow 时机）
+    //
+    // 原因：这个方法在 MapView **还没测量出宽高**时被调用
+    // （切页回来、地图刚挂到窗口上，此刻 width/height 都还是 0）。
+    // 它内部用 `getWidth() - 2 * border` 算可用宽度 = −96，
+    // 再拿负数尺寸去反推缩放级别 → 内部循环出不来。
+    // 结果主线程被堵约 20 秒，系统判定无响应 → ANR。
+    //
+    // 现在改成两件事：
+    //   ① 宽高没准备好就 post 到布局之后再做（有次数上限，不会无限重试）
+    //   ② 缩放级别自己按 Web 墨卡托算，并夹到合法区间 ——
+    //      不经过 osmdroid 那段有问题的循环
+    fitToTrack(view, geoPoints, keepOverlay, retries = 0)
+
+    view.invalidate()
+}
+
+/** 把地图缩放到刚好装下 [geoPoints]。 */
+private fun fitToTrack(
+    view: MapView,
+    geoPoints: List<GeoPoint>,
+    keepOverlay: org.osmdroid.views.overlay.Overlay?,
+    retries: Int,
+) {
     try {
         if (geoPoints.size >= 2) {
-            val box = org.osmdroid.util.BoundingBox.fromGeoPoints(geoPoints)
-            view.zoomToBoundingBox(box, false, 48)
+            // ⚠️ 宽高为 0 时算出来的缩放级别必然是错的（会被夹到最小值，
+            //    地图一下子缩到全世界），所以必须等测量完成。
+            //    这个时机正是崩溃堆栈里 onAttachedToWindow 的那一刻。
+            if (view.width <= 0 || view.height <= 0) {
+                if (retries < MAX_FIT_RETRIES) {
+                    view.post { fitToTrack(view, geoPoints, keepOverlay, retries + 1) }
+                }
+                return
+            }
+
+            val box = BoundingBox.fromGeoPoints(geoPoints)
+            val zoom = fitZoom(box, view.width, view.height)
+            view.controller.setZoom(zoom)
+            view.controller.setCenter(
+                GeoPoint(box.centerLatitude, box.centerLongitude),
+            )
         } else if (geoPoints.isNotEmpty()) {
             view.controller.setZoom(16.0)
             view.controller.setCenter(geoPoints.last())
@@ -333,9 +385,61 @@ private fun drawTrack(
             } catch (_: Exception) { /* 忽略 */ }
         }
     }
-
-    view.invalidate()
 }
+
+/**
+ * 计算能把 [box] 完整装进 [widthPx]×[heightPx] 的最大缩放级别。
+ *
+ * 按 Web 墨卡托自己算：经度方向线性，纬度方向取墨卡托 y。
+ * 不用 osmdroid 的 zoomToBoundingBox —— 它在尺寸非法时会卡死（见上面注释）。
+ *
+ * 结果会向下取整并夹到 [MIN_FIT_ZOOM]..[MAX_FIT_ZOOM]。
+ * 向下取整是为了**保证装得下**：宁可稍微缩一点，也不要因为浮点误差
+ * 让轨迹贴边溢出。
+ */
+private fun fitZoom(box: BoundingBox, widthPx: Int, heightPx: Int): Double {
+    // 边距按比例取，避免在小尺寸视图上把可用区域算成负数
+    val border = min(FIT_BORDER_PX, min(widthPx, heightPx) / 4)
+    val usableW = (widthPx - 2 * border).coerceAtLeast(1)
+    val usableH = (heightPx - 2 * border).coerceAtLeast(1)
+
+    // 退化情况（所有点重合）→ 夹到极小跨度，最终会被 MAX_FIT_ZOOM 兜住
+    val lonSpan = (box.lonEast - box.lonWest).coerceAtLeast(MIN_SPAN)
+    val latSpan = (latToMercatorY(box.latSouth) - latToMercatorY(box.latNorth))
+        .coerceAtLeast(MIN_SPAN)
+
+    // 世界在 z 级时有 TILE_SIZE * 2^z 像素
+    val zoomLon = log2(usableW * 360.0 / (lonSpan * TILE_SIZE))
+    val zoomLat = log2(usableH / (latSpan * TILE_SIZE))
+
+    return floor(min(zoomLon, zoomLat)).coerceIn(MIN_FIT_ZOOM, MAX_FIT_ZOOM)
+}
+
+/** 纬度 → 归一化墨卡托 y（0 = 北极，1 = 南极）。 */
+private fun latToMercatorY(lat: Double): Double {
+    val rad = Math.toRadians(lat.coerceIn(-MAX_LAT, MAX_LAT))
+    return (1.0 - ln(tan(rad) + 1.0 / cos(rad)) / PI) / 2.0
+}
+
+/** 墨卡托在极区发散，纬度先夹到可表示范围。 */
+private const val MAX_LAT = 85.05112878
+
+/** 单张瓦片边长（osmdroid 与高德源都是 256）。 */
+private const val TILE_SIZE = 256.0
+
+/** 缩放边距（像素），与 osmdroid 原来传的 48 保持一致。 */
+private const val FIT_BORDER_PX = 48
+
+/** 最小跨度，防止退化成 0 导致算出无穷大。 */
+private const val MIN_SPAN = 1e-7
+
+private const val MIN_FIT_ZOOM = 2.0
+
+/** 与 AmapTileSource.MAX_ZOOM 一致：超过 18 级也没有瓦片了。 */
+private const val MAX_FIT_ZOOM = 18.0
+
+/** 等布局完成的重试次数上限，避免视图一直没被测量时无限 post。 */
+private const val MAX_FIT_RETRIES = 3
 
 /**
  * 包一层父容器，用来阻止【外层】容器抢走地图的手势。

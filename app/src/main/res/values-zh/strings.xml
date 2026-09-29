@@ -89,8 +89,6 @@ App 使用统计与设备状态按固定周期采集，不受这里影响。</st
     <string name="backup_my_nickname_hint">对方导入你的数据后，会用这个昵称显示</string>
     <string name="backup_save">保存</string>
     <string name="backup_export">导出我的数据</string>
-    <string name="backup_export_hint">生成 .beian 文件，用微信等任意方式发给对方</string>
-    <string name="backup_export_action">导出 .beian 文件</string>
     <string name="backup_import">导入对方的数据</string>
     <string name="backup_import_hint">选择对方发给你的 .beian 文件</string>
     <string name="backup_import_action">选择 .beian 文件</string>
@@ -192,4 +190,10 @@ App 使用统计与设备状态按固定周期采集，不受这里影响。</st
     <string name="crash_clear">清空</string>
     <string name="crash_cleared">已清空</string>
     <string name="crash_confirm_clear">确定清空全部崩溃日志？</string>
+
+    <string name="backup_export_share">直接分享给对方</string>
+    <string name="backup_export_share_hint">推荐。生成后立刻弹出分享面板，选微信等发出去即可。</string>
+    <string name="backup_export_save">保存到文件</string>
+    <string name="backup_export_save_hint">存到手机里自己指定位置，之后再手动发送。</string>
+    <string name="backup_export_done">已生成，正在打开分享…</string>
 </resources>

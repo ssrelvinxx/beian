@@ -33,6 +33,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.beian.tracker.R
+import androidx.compose.material3.OutlinedButton
+import com.beian.tracker.util.BackupSharer
 import com.beian.tracker.util.TimeUtil
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
@@ -57,7 +59,7 @@ fun BackupScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
 
     val scope = androidx.compose.runtime.rememberCoroutineScope()
 
-    // 导出：先写临时文件，再走分享
+    // 导出（备选路径）：用户自己挑位置存盘
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/octet-stream"),
     ) { uri ->
@@ -65,13 +67,31 @@ fun BackupScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         scope.launch {
             try {
                 busy = true
-                val json = vm.buildBackupJson(days = 0)
-                context.contentResolver.openOutputStream(uri)?.use { out ->
-                    out.write(json.toByteArray())
+                // ⚠️ 取数和写盘都要在 IO 上。
+                //
+                // buildBackupJson 会遍历全部轨迹点/事件并编码成 JSON，
+                // openOutputStream().write() 又是同步阻塞写 —— 备份包几 MB 时
+                // 这两步叠在一起能把主线程占住好几秒（ANR 的典型成因）。
+                // 只有 Toast 回主线程。
+                val json = withContext(Dispatchers.IO) {
+                    vm.buildBackupJson(days = 0)
                 }
-                Toast.makeText(context, "已导出", Toast.LENGTH_SHORT).show()
+                withContext(Dispatchers.IO) {
+                    context.contentResolver.openOutputStream(uri)?.use { out ->
+                        out.write(json.toByteArray())
+                    }
+                }
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, "已导出", Toast.LENGTH_SHORT).show()
+                }
             } catch (e: Exception) {
-                Toast.makeText(context, "导出失败：${e.message}", Toast.LENGTH_LONG).show()
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(
+                        context,
+                        "导出失败：${e.message}",
+                        Toast.LENGTH_LONG,
+                    ).show()
+                }
             } finally {
                 busy = false
             }
@@ -170,20 +190,78 @@ fun BackupScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
                 )
+
+                // 主路径：生成后直接弹分享面板。
+                //
+                // 导出这个动作的目的就是「发给对方」，所以默认就该一步到
+                // 分享面板 —— 原来是先弹系统存储选择器、存完还要用户自己
+                // 去文件管理器找文件再分享，多绕两步还容易找不到。
                 Text(
-                    text = stringResource(R.string.backup_export_hint),
+                    text = stringResource(R.string.backup_export_share_hint),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Button(
                     onClick = {
-                        val stamp = TimeUtil.dayKey().replace("-", "")
-                        exportLauncher.launch("beian_${stamp}.beian")
+                        // 取数 + 写盘都在 IO 上；只有弹分享面板回主线程
+                        // （startActivity 必须在主线程调）。
+                        scope.launch {
+                            try {
+                                busy = true
+                                // 取数在 IO 上：要遍历全部轨迹点/事件并编码
+                                val json = withContext(Dispatchers.IO) {
+                                    vm.buildBackupJson(days = 0)
+                                }
+                                val name = backupFileName()
+
+                                // ⚠️ 写盘和分享要分开调度，不能一起丢进 IO。
+                                //
+                                // 写文件是阻塞 IO，必须在 IO 上；
+                                // 但分享内部要调 startActivity，而 Android
+                                // 要求它**必须在主线程**调用 ——
+                                // 一起塞进 withContext(IO) 会在部分 ROM 上抛
+                                // CalledFromWrongThreadException，或者静默不动。
+                                val file = withContext(Dispatchers.IO) {
+                                    BackupSharer.writeOnly(context, json, name)
+                                }
+                                Toast.makeText(
+                                    context,
+                                    context.getString(R.string.backup_export_done),
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                                BackupSharer.shareFile(context, file)
+                            } catch (e: Exception) {
+                                Toast.makeText(
+                                    context,
+                                    "导出失败：${e.message}",
+                                    Toast.LENGTH_LONG,
+                                ).show()
+                            } finally {
+                                busy = false
+                            }
+                        }
                     },
                     enabled = !busy,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text(stringResource(R.string.backup_export_action))
+                    Text(stringResource(R.string.backup_export_share))
+                }
+
+                // 备选路径：用户自己挑位置存盘，之后再手动发送。
+                // 保留它是因为「发给谁还没定，先存下来」也是常见需求。
+                Text(
+                    text = stringResource(R.string.backup_export_save_hint),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedButton(
+                    onClick = {
+                        exportLauncher.launch(backupFileName())
+                    },
+                    enabled = !busy,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(stringResource(R.string.backup_export_save))
                 }
             }
         }
@@ -387,3 +465,12 @@ fun BackupScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         )
     }
 }
+
+/**
+ * 导出文件名：beian_<日期>.beian
+ *
+ * 用日期而不是时间戳：对方收到时一眼能看出是哪天的数据，
+ * 同名再次导出时覆写即可（旧文件本来也没用）。
+ */
+private fun backupFileName(): String =
+    "beian_${TimeUtil.dayKey().replace("-", "")}.beian"

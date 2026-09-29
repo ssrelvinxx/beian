@@ -89,8 +89,6 @@ App usage and device stats are collected on a fixed cycle, independent of this s
     <string name="backup_my_nickname_hint">Shown to the other side after they import your data</string>
     <string name="backup_save">Save</string>
     <string name="backup_export">Export my data</string>
-    <string name="backup_export_hint">Save a .beian file and send it to the other side via any app</string>
-    <string name="backup_export_action">Export .beian file</string>
     <string name="backup_import">Import their data</string>
     <string name="backup_import_hint">Pick the .beian file the other side sent you</string>
     <string name="backup_import_action">Pick a .beian file</string>
@@ -193,4 +191,10 @@ App usage and device stats are collected on a fixed cycle, independent of this s
     <string name="crash_clear">Clear</string>
     <string name="crash_cleared">Cleared</string>
     <string name="crash_confirm_clear">Clear all crash logs?</string>
+
+    <string name="backup_export_share">Share directly</string>
+    <string name="backup_export_share_hint">Recommended. Opens the share sheet right away — pick WeChat and send.</string>
+    <string name="backup_export_save">Save to file</string>
+    <string name="backup_export_save_hint">Save to a location you choose, then send it later.</string>
+    <string name="backup_export_done">Ready, opening share sheet…</string>
 </resources>
