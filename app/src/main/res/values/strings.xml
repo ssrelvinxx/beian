@@ -57,8 +57,9 @@
     <string name="settings_map">Map</string>
     <string name="settings_map_desc">Uses Amap tiles (Chinese labels, reachable in mainland China). No API key needed.</string>
     <string name="settings_permissions">Permissions</string>
-    <string name="settings_interval">Tracking interval</string>
-    <string name="settings_interval_desc">Shorter intervals give finer tracks but use more battery and make the system location indicator more visible. 2 minutes is fine for walking; use 1 minute or less when cycling or driving.</string>
+    <string name="settings_interval">Track sampling interval</string>
+    <string name="settings_interval_desc">Affects track points only: shorter intervals give finer tracks but use more battery and make the system location indicator more visible. 2 minutes is fine for walking; use 1 minute or less when cycling or driving.
+App usage and device stats are collected on a fixed cycle, independent of this setting.</string>
     <string name="settings_interval_current">Current: %1$s</string>
     <string name="settings_interval_sec">%1$d s</string>
     <string name="settings_interval_min">%1$d min</string>

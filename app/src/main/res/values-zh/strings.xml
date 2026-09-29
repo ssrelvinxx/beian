@@ -57,8 +57,9 @@
     <string name="settings_map">地图</string>
     <string name="settings_map_desc">使用高德瓦片（中文地名，国内可直连），无需申请 Key。</string>
     <string name="settings_permissions">权限</string>
-    <string name="settings_interval">采集间隔</string>
-    <string name="settings_interval_desc">间隔越短轨迹越细，但更耗电、系统定位提示也更明显。步行 2 分钟够用；骑行或驾车建议 1 分钟以内。</string>
+    <string name="settings_interval">移动轨迹采集间隔</string>
+    <string name="settings_interval_desc">只影响轨迹点的疏密：间隔越短轨迹越细，但更耗电、系统定位提示也更明显。步行 2 分钟够用；骑行或驾车建议 1 分钟以内。
+App 使用统计与设备状态按固定周期采集，不受这里影响。</string>
     <string name="settings_interval_current">当前：%1$s</string>
     <string name="settings_interval_sec">%1$d 秒</string>
     <string name="settings_interval_min">%1$d 分</string>

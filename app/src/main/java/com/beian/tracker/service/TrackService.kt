@@ -17,6 +17,7 @@ import androidx.core.content.ContextCompat
 import com.beian.tracker.R
 import com.beian.tracker.data.TrackRepository
 import com.beian.tracker.ui.MainActivity
+import com.beian.tracker.util.DeviceInfo
 import com.beian.tracker.util.SettingsStore
 import android.location.Location
 import android.location.LocationListener
@@ -93,8 +94,12 @@ class TrackService : Service() {
                 // 服务重启才生效 —— 用户改完设置会发现「没反应」。
                 // startTracking() 里对 updatesRequested 有防护，
                 // 这里要先复位，才会用新间隔重新 requestUpdates。
+                //
+                // 只做「重注册定位」这一件事：断连补偿、回填都只在
+                // 服务真正启动时该跑一次，改个间隔不必重做。
+                // ticker 不受影响 —— 它的周期是固定的，与轨迹间隔无关。
                 updatesRequested = false
-                startTracking()
+                reloadLocationUpdates()
             }
             else -> startTracking()
         }
@@ -147,12 +152,31 @@ class TrackService : Service() {
                 requestUpdates(interval)
                 updatesRequested = true
             }
-            startTicker(interval)
+            // ⚠️ 快照周期不再跟「轨迹间隔」绑定，用独立的固定值，见 startTicker 注释。
+            startTicker()
         }
     }
 
     /** 已注册的 provider，onDestroy 时按此摘除。 */
     private val registeredProviders = mutableListOf<String>()
+
+    /**
+     * 按当前设置重新注册定位请求（不重启 ticker、不重跑补偿逻辑）。
+     *
+     * 用户改了「移动轨迹采集间隔」后调用。已经注册过的话先摘掉旧的，
+     * 否则会同时存在两个不同间隔的请求，系统按更密的那个回调。
+     */
+    private fun reloadLocationUpdates() {
+        scope.launch {
+            if (!hasLocationPermission()) return@launch
+            val interval = runCatching { settings.intervalSec.first() }.getOrDefault(120)
+            // 用一个 listener 实例注册到多个 provider，
+            // 所以 removeUpdates 一次就能把所有 provider 的回调摘干净。
+            runCatching { locationManager.removeUpdates(locationListener) }
+            registeredProviders.clear()
+            requestUpdates(interval)
+        }
+    }
 
     /**
      * 注册系统定位回调。
@@ -260,8 +284,32 @@ class TrackService : Service() {
         }
     }
 
-    /** 周期性抓设备状态快照。 */
-    private fun startTicker(intervalSec: Int) {
+    /**
+     * 周期性抓设备状态快照（电量/网络/App 使用/前台片段）。
+     *
+     * ⚠️ 周期**不跟**「轨迹采集间隔」绑定 —— 那是两件不同的事：
+     *
+     *   轨迹间隔 → 用户按出行方式选（步行 2 分、骑行 1 分…），
+     *              控制的是定位回调频率 `requestUpdates()`，
+     *              只影响轨迹点的疏密。
+     *
+     *   快照周期 → 控制的是「App 使用排行、电量曲线、前台时间线」的
+     *              刷新快慢。跟轨迹疏密毫无关系。
+     *
+     * 之前两者共用同一个值，用户把轨迹设成「10 分」省电时，
+     * App 使用排行也跟着 10 分钟才更新一次，看着像卡住了。
+     *
+     * 取 [SNAPSHOT_INTERVAL_MS]（60 秒）的理由：
+     *   · 与系统「设置 → 应用 → 使用时长」的刷新粒度相当，
+     *     排行看起来是跟手的
+     *   · 单轮成本主要是两次全天 queryEvents（随一天推进变长），
+     *     60 秒一次在白天几十毫秒、最多上百毫秒，负担可接受
+     *   · 再快（10~30 秒）收益很小，代价是成倍的全天事件扫描
+     *
+     * 熄屏时降到 [SNAPSHOT_INTERVAL_SCREEN_OFF_MS]：
+     *   熄屏期间 App 不切换、电量网络几乎不变，高频采集纯浪费。
+     */
+    private fun startTicker() {
         tickerJob?.cancel()
         tickerJob = scope.launch {
             while (true) {
@@ -276,7 +324,15 @@ class TrackService : Service() {
                 // 捕获后本轮跳过，下一轮继续，采集不会因为一次失败就断掉。
                 runCatching { repository.captureSnapshot() }
                     .onFailure { Log.w(TAG, "captureSnapshot failed, skip this round", it) }
-                delay(intervalSec * 1000L)
+
+                // 熄屏时降频。屏幕状态用很便宜的 API 现查，
+                // 不要复用 captureSnapshot 里的值（那是上一轮的结果）。
+                val screenOn = runCatching { DeviceInfo.isScreenOn(this@TrackService) }
+                    .getOrDefault(true)
+                delay(
+                    if (screenOn) SNAPSHOT_INTERVAL_MS
+                    else SNAPSHOT_INTERVAL_SCREEN_OFF_MS,
+                )
             }
         }
     }
@@ -394,6 +450,27 @@ class TrackService : Service() {
 
         /** 「最近已知位置」的最大可接受年龄：超过就当过期，不用它补点。 */
         private const val LAST_KNOWN_MAX_AGE_MS = 2 * 60 * 1000L
+
+        /**
+         * 设备状态快照的周期（亮屏时）。
+         *
+         * ⚠️ 刻意与「轨迹采集间隔」分开。用户设的截隔是给定位用的
+         * （步行 2 分 / 骑行 1 分…），跟 App 使用排行的刷新快慢无关。
+         * 两者绑在一起时，把轨迹调成 10 分会导致排行 10 分钟才更新，
+         * 看起来像卡住。
+         *
+         * 60 秒：与系统「使用时长」的刷新粒度相当，且单轮成本可接受。
+         */
+        private const val SNAPSHOT_INTERVAL_MS = 60_000L
+
+        /**
+         * 熄屏时的快照周期。
+         *
+         * 熄屏期间 App 不切换、电量网络几乎不变，采那么勤没有意义。
+         * 拉长到 5 分钟：既不会漏掉明显变化（熄屏期间一般也没变化），
+         * 又能把一晚上的全天事件扫描次数从 ~480 次降到 ~96 次。
+         */
+        private const val SNAPSHOT_INTERVAL_SCREEN_OFF_MS = 5 * 60_000L
 
         /**
          * 定位更新的最小位移门槛（米）。
