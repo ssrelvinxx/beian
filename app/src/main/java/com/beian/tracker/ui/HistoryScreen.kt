@@ -98,6 +98,10 @@ fun HistoryScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                             )
                         }
                         if (expandedDay == day) {
+                            // ── 当天 App 使用排行 ──────────────────────────────
+                            // 数据来自本地库，本机与导入的对方数据都能显示。
+                            AppUsageOfDay(vm = vm, day = day)
+
                             Text(
                                 text = stringResource(R.string.history_app_timeline),
                                 style = MaterialTheme.typography.labelMedium,

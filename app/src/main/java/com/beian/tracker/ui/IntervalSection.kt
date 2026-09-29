@@ -2,7 +2,8 @@ package com.beian.tracker.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Card
@@ -32,6 +33,7 @@ private val INTERVAL_OPTIONS = listOf(30, 60, 120, 300, 600)
  *   · 120s      —— 折中：步行仍能看出走向，骑行以上会开始拉直
  *   · 300s/600s —— 只留大轮廓，适合「记录去过哪」而非「怎么走的」
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun IntervalSection(vm: MainViewModel, modifier: Modifier = Modifier) {
     val current by vm.intervalSec.collectAsStateWithLifecycle()
@@ -51,11 +53,17 @@ fun IntervalSection(vm: MainViewModel, modifier: Modifier = Modifier) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
-            Row(
+            // ⚠️ 用 FlowRow 自动换行，不要用 Row。
+            //
+            // 之前是 Row + 5 个 FilterChip：窄屏上第 5 个（10 分）会被挤出
+            // 屏幕，只露出一截横向滚动条。用户看到的现象是
+            // 「按钮点不了 / 不知道那个竖条是什么」，而当前选中项恰好是
+            // 被挤出去的那个时，连「选中了哪个」都看不见。
+            FlowRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                // 横向放不下 5 个，只列出常用档；当前值若不在此列仍会显示为选中态
                 INTERVAL_OPTIONS.forEach { sec ->
                     FilterChip(
                         selected = current == sec,

@@ -6,7 +6,7 @@
 
     <string name="tab_home">Home</string>
     <string name="tab_track">Track</string>
-    <string name="tab_history">History</string>
+    <string name="tab_history">Stats</string>
     <string name="tab_status">Status</string>
     <string name="tab_settings">Settings</string>
 
@@ -25,7 +25,7 @@
     <string name="track_active">Tracking active</string>
     <string name="track_inactive">Tracking stopped</string>
 
-    <string name="history_title">History</string>
+    <string name="history_title">Stats</string>
     <string name="history_empty">No records yet</string>
     <string name="history_hourly_title">Usage by hour</string>
     <string name="history_hourly_empty">No session data for this day</string>
@@ -43,6 +43,7 @@
     <string name="status_app_timeline">App open timeline</string>
     <string name="status_app_timeline_empty">No opens recorded yet</string>
     <string name="status_app_timeline_running">in use now</string>
+    <string name="history_app_usage">App usage that day</string>
     <string name="history_app_timeline">App opens that day</string>
     <string name="status_title">Device Status</string>
     <string name="status_battery">Battery</string>

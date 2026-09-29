@@ -6,7 +6,7 @@
 
     <string name="tab_home">今日</string>
     <string name="tab_track">轨迹</string>
-    <string name="tab_history">历史</string>
+    <string name="tab_history">统计</string>
     <string name="tab_status">状态</string>
     <string name="tab_settings">设置</string>
 
@@ -25,7 +25,7 @@
     <string name="track_active">正在记录</string>
     <string name="track_inactive">已停止</string>
 
-    <string name="history_title">历史轨迹</string>
+    <string name="history_title">统计</string>
     <string name="history_empty">暂无记录</string>
     <string name="history_hourly_title">各时段使用情况</string>
     <string name="history_hourly_empty">这一天没有使用记录</string>
@@ -44,6 +44,7 @@
     <string name="status_app_timeline_empty">暂无打开记录</string>
     <string name="status_app_timeline_running">正在使用中</string>
     <string name="history_app_timeline">当天 App 打开记录</string>
+    <string name="history_app_usage">当天 App 使用时长</string>
     <string name="status_title">设备状态</string>
     <string name="status_battery">电量</string>
     <string name="status_charging">充电中</string>

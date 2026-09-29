@@ -433,10 +433,21 @@ class TrackRepository(private val context: Context) {
         val points = allPoints(LOCAL_SOURCE).filter { it.timestamp >= cutoff }
         val events = allEvents(LOCAL_SOURCE).filter { it.timestamp >= cutoff }
 
-        // 覆盖到的日期：优先用轨迹点，其次用事件
-        val daysCovered = points.map { it.dayKey }.toSortedSet().ifEmpty {
-            events.map { it.dayKey }.toSortedSet()
-        }
+        // 覆盖到的日期：轨迹点、事件、App 使用、前台片段、快照 —— 取并集。
+        //
+        // ⚠️ 之前只取「轨迹点」的日期，导致一个真实的数据丢失：
+        // 某几天没采到轨迹（服务没跑/没定位），但那几天是**在用手机的**，
+        // app_usage 里有数据。导出时这些天不在 daysCovered 里，
+        // 使用数据就被整段丢掉 —— 对方导入后看不到那几天的排行。
+        //
+        // 注意：daysOfSource 是 suspend，不能在 sortedSetOf().apply{} 里调，
+        // 必须逐个 await 完再合并。
+        val daysCovered = sortedSetOf<String>()
+        daysCovered.addAll(points.map { it.dayKey })
+        daysCovered.addAll(events.map { it.dayKey })
+        daysCovered.addAll(snapshotDao.daysOfSource(LOCAL_SOURCE))
+        daysCovered.addAll(appUsageDao.daysOfSource(LOCAL_SOURCE))
+        daysCovered.addAll(appSessionDao.daysOfSource(LOCAL_SOURCE))
 
         val appUsage = ArrayList<AppUsage>()
         val appSessions = ArrayList<AppSession>()

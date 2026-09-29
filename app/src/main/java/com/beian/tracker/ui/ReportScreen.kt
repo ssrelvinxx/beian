@@ -139,22 +139,9 @@ fun ReportScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
             BackgroundWarning()
         }
 
-        // ── 今日 App 使用排行 ─────────────────────────────────────────────────
-        // 放在事件流上方、默认只显示前 3 个，避免把事件流挤下去。
-        //
-        // 对方的导入包里不含 App 使用数据（导出时就没打包这项），
-        // 所以这里给出明确说明，而不是让整块静默消失 ——
-        // 静默消失会让人以为「切换没生效」。
-        if (isLocal) {
-            AppUsageSection(vm)
-        } else {
-            Text(
-                text = stringResource(R.string.report_peer_no_app_usage),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
-            )
-        }
+        // ── 今日 App 使用排行：已移除 ─────────────────────────────────────────
+        // 按需求从报备页去掉。App 使用统计统一放到「统计」页（原历史页）看，
+        // 报备页只留事件流，页面更短、切过来也更快。
 
         HorizontalDivider()
 

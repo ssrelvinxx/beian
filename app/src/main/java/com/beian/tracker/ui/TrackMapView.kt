@@ -1,6 +1,7 @@
 package com.beian.tracker.ui
 
 import android.graphics.Color
+import android.view.MotionEvent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
@@ -78,7 +79,15 @@ fun TrackMapView(
             // 且即便下到也几乎没有中文地名。高德同为 Slippy Map 编号，
             // 换源不会偏移，能显示中文路名/地名/地铁线。详见 AmapTileSource 注释。
             setTileSource(AmapTileSource())
+            // 双指缩放/拖动（保留）
             setMultiTouchControls(true)
+            // ⚠️ 关掉 osmdroid 内置的 [−][+] 缩放按钮。
+            //
+            // 它默认是开的，会在地图中央下方浮出一对白色方块按钮
+            // （截图里能看到），既挡地图内容，又和双指手势抢触摸事件 ——
+            // 用户双指缩放后常有「拖不动了」的感觉。
+            // 关掉它，缩放完全交给双指手势。
+            setBuiltInZoomControls(false)
             // 无瓦片时的背景色，避免死黑/纯白
             setBackgroundColor(Color.parseColor("#FFEFE6EA"))
             controller.setZoom(15.0)
@@ -164,7 +173,30 @@ fun TrackMapView(
 
         AndroidView(
             modifier = Modifier.matchParentSize(),
-            factory = { mapView },
+            factory = { 
+                // ⚠️ 让 MapView 在被触摸时禁止外层（Compose 的 verticalScroll）
+                // 拦截手势。
+                //
+                // 地图嵌在可滚动 Column 里，用户在图上纵向拖动时，外层会把它
+                // 当成「翻页」抢走 —— 表现就是「缩放后地图拖不动」（横向还能动，
+                // 因为页面只滚纵向）。
+                //
+                // requestDisallowInterceptTouchEvent 是 Android 原生 View 体系里
+                // 解决这类冲突的标准做法：手指按下时禁止父容器拦截，抬起后再放开。
+                // 放在 AndroidView 的 factory 里，地图一创建就挂上。
+                mapView.setOnTouchListener { v, event ->
+                    when (event.actionMasked) {
+                        MotionEvent.ACTION_DOWN,
+                        MotionEvent.ACTION_MOVE,
+                        -> v.parent?.requestDisallowInterceptTouchEvent(true)
+                        MotionEvent.ACTION_UP,
+                        MotionEvent.ACTION_CANCEL,
+                        -> v.parent?.requestDisallowInterceptTouchEvent(false)
+                    }
+                    false // 不消费事件，仍交给 MapView 自己处理
+                }
+                mapView
+            },
             update = { view ->
                 applyOfflineMode(view, offlineMode)
                 // 指纹：点数 + 首尾点（足够区分「没变」和「新增/切换了日期」）

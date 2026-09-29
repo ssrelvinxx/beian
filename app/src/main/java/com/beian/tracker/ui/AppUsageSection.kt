@@ -15,8 +15,10 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -168,9 +170,13 @@ fun AppUsageSection(vm: MainViewModel, modifier: Modifier = Modifier) {
     }
 }
 
-/** 一行：图标占位 + 应用名 + 时长 + 进度条。 */
+/**
+ * 一行：应用名 + 时长 + 进度条。
+ *
+ * 供报备页的今日排行、以及「统计」页里按天展开的排行共用。
+ */
 @Composable
-private fun AppUsageRow(item: AppUsage, maxMs: Long) {
+fun AppUsageRow(item: AppUsage, maxMs: Long) {
     Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -199,5 +205,65 @@ private fun AppUsageRow(item: AppUsage, maxMs: Long) {
                 .height(3.dp)
                 .widthIn(min = 20.dp),
         )
+    }
+}
+
+/**
+ * 「某一天」的 App 使用排行。
+ *
+ * 与 [AppUsageSection] 的区别：那个跟着「当前选中的日期」走，
+ * 这个显式传入 [day]，用在「统计」页按天展开的场景。
+ *
+ * 数据直接读本地库 —— 本机数据和导入的对方数据都适用，
+ * 看导入数据不需要任何权限（权限只在采集本机数据时才需要）。
+ */
+@Composable
+fun AppUsageOfDay(
+    vm: MainViewModel,
+    day: String,
+    modifier: Modifier = Modifier,
+) {
+    val sourceId by vm.sourceId.collectAsStateWithLifecycle()
+    var usage by remember { mutableStateOf(emptyList<AppUsage>()) }
+
+    LaunchedEffect(sourceId, day) {
+        usage = runCatching { vm.appUsageOfDayOnce(sourceId, day) }
+            .getOrDefault(emptyList())
+            .filter { it.usageMs > 0 }
+            .sortedByDescending { it.usageMs }
+    }
+
+    // 那天没有数据就不占位，留白比显示一行「无数据」干净
+    if (usage.isEmpty()) return
+
+    val total = usage.sumOf { it.usageMs }
+    val max = usage.maxOf { it.usageMs }.coerceAtLeast(1L)
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(top = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stringResource(R.string.history_app_usage),
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Medium,
+            )
+            Spacer(Modifier.weight(1f))
+            Text(
+                text = stringResource(
+                    R.string.report_app_usage_total,
+                    TimeUtil.formatDuration(total),
+                ),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        usage.forEach { item -> AppUsageRow(item = item, maxMs = max) }
     }
 }
