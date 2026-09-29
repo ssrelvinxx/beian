@@ -200,7 +200,7 @@ fun TrackMapView(
                 //
                 // 正确做法：不动 MapView，包一层父容器，
                 // 由这个容器阻止 Compose 的 verticalScroll 抢手势。
-                ChildInterceptBlocker(mapView)
+                ChildInterceptBlocker(context, mapView)
             },
             update = { _ ->
                 // 参数是外层容器（ChildInterceptBlocker），本块用不到 ——

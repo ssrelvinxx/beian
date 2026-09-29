@@ -18,26 +18,6 @@ import kotlinx.coroutines.flow.combine
  */
 class TrackRepository(private val context: Context) {
 
-    companion object {
-        /**
-         * 启动时回填的 App 使用天数。
-         *
-         * 取 7 是因为系统 UsageStats 的保留期通常就是 7~14 天 ——
-         * 要得更多没有意义（系统里就没有），反而白白拉长查询区间。
-         * 回填后本地库会**持续累积**，不再受系统保留期限制。
-         */
-        const val BACKFILL_DAYS = 7
-
-        /**
-         * 回填是否已跑过（进程内）。
-         *
-         * ⚠️ 必须是 static 而不是实例字段：TrackRepository 每次都是 new 的
-         * （MainViewModel 一个、TrackService 一个），实例字段挡不住两处都跑。
-         * 放伴生对象里，同一进程内只真正回填一次。
-         */
-        @Volatile
-        private var usageBackfilled = false
-    }
 
     private val db = AppDatabase.get(context)
 
@@ -163,9 +143,13 @@ class TrackRepository(private val context: Context) {
      * 不会产生重复行（主键是 sourceId + dayKey + packageName）。
      */
     suspend fun backfillDailyUsage(days: Int = BACKFILL_DAYS) {
-        // 用同步块做「检查 + 置位」，避免两处（ViewModel / Service）
-        // 同时进来都通过检查、把同一批数据写两遍。
-        synchronized(this) {
+        // ⚠️ 锁必须是【所有实例共享】的对象。
+        //
+        // TrackRepository 每次都是 new 的（MainViewModel 一个、
+        // TrackService 一个），所以 synchronized(this) 锁的是各自的实例，
+        // 两处并发进来时都能通过检查 —— 等于没锁。
+        // 用伴生对象里的专用锁对象，全进程只有一把。
+        synchronized(backfillLock) {
             if (usageBackfilled) return
             usageBackfilled = true
         }
@@ -174,7 +158,7 @@ class TrackRepository(private val context: Context) {
         val byDay = runCatching { UsageStatsReader.dailyPerApp(context, days) }
             .getOrElse {
                 // 回填失败不影响主流程；允许下次再试
-                synchronized(this) { usageBackfilled = false }
+                synchronized(backfillLock) { usageBackfilled = false }
                 return
             }
         if (byDay.isEmpty()) return
@@ -722,6 +706,34 @@ class TrackRepository(private val context: Context) {
         /** 停留段最短时长。 */
         const val STAY_MIN_MS = 10 * 60_000L
 
+
+        /**
+         * 启动时回填的 App 使用天数。
+         *
+         * 取 7 是因为系统 UsageStats 的保留期通常就是 7~14 天 ——
+         * 要得更多没有意义（系统里就没有），反而白白拉长查询区间。
+         * 回填后本地库会**持续累积**，不再受系统保留期限制。
+         */
+        const val BACKFILL_DAYS = 7
+
+        /**
+         * 回填是否已跑过（进程内）。
+         *
+         * ⚠️ 必须是 static 而不是实例字段：TrackRepository 每次都是 new 的
+         * （MainViewModel 一个、TrackService 一个），实例字段挡不住两处都跑。
+         * 放伴生对象里，同一进程内只真正回填一次。
+         */
+        @Volatile
+        private var usageBackfilled = false
+
+        /**
+         * 回填的互斥锁。
+         *
+         * 必须是**所有实例共享**的对象：TrackRepository 每次都是 new 的
+         * （MainViewModel / TrackService / 两个 Receiver 各一个），
+         * 用 synchronized(this) 锁的是各自实例，等于没锁。
+         */
+        private val backfillLock = Any()
     }
 }
 

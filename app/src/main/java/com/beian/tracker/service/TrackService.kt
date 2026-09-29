@@ -327,7 +327,8 @@ class TrackService : Service() {
 
                 // 熄屏时降频。屏幕状态用很便宜的 API 现查，
                 // 不要复用 captureSnapshot 里的值（那是上一轮的结果）。
-                val screenOn = runCatching { DeviceInfo.isScreenOn(this@TrackService) }
+                // TrackService 本身是 Context（Service 的子类），直接传。
+                val screenOn = runCatching { DeviceInfo.isScreenOn(applicationContext) }
                     .getOrDefault(true)
                 delay(
                     if (screenOn) SNAPSHOT_INTERVAL_MS
