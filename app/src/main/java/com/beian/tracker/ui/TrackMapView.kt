@@ -155,7 +155,7 @@ fun TrackMapView(
         // ⚠️ 用 points 的「指纹」而不是 points 本身做 key。
         //
         // update 块在每次重组时都会执行，而重组非常频繁（地图自身 invalidate、
-        // 状态栏变化、采集每 60 秒落一个新点…）。原来的写法无条件调用
+        // 状态栏变化、采集每轮落一个新点…）。原来的写法无条件调用
         // drawTrack()，而它内部是 `removeAll` + 重建 Polyline + 逐个 Marker，
         // 等于每次重组都把整条轨迹重画一遍 —— 点位一多就卡死。
         //

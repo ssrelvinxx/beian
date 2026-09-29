@@ -75,7 +75,9 @@ class SettingsStore(private val context: Context) {
     }
 
     suspend fun setIntervalSec(value: Int) {
-        context.dataStore.edit { it[keyInterval] = value.coerceIn(10, 600) }
+        context.dataStore.edit {
+            it[keyInterval] = value.coerceIn(MIN_INTERVAL, MAX_INTERVAL)
+        }
     }
 
     suspend fun setTrackingEnabled(value: Boolean) {
@@ -83,7 +85,22 @@ class SettingsStore(private val context: Context) {
     }
 
     companion object {
-        const val DEFAULT_INTERVAL = 60
+        /**
+         * 默认采集间隔（秒）。
+         *
+         * ⚠️ 从 60 调到 120 的原因：60 秒档下定位请求过于活跃，
+         * 系统会持续显示定位使用状态，也明显更耗电。2 分钟是
+         * 「轨迹可用」与「系统安静」之间的折中。
+         *
+         * 代价（实测估算）：步行仍能看出走向（2 分钟约 167m），
+         * 但骑行/驾车时相邻两点跨度 500m~2.7km，路径会被拉直、
+         * 里程偏低。用户可在设置里自行改回更密的档位。
+         */
+        const val DEFAULT_INTERVAL = 120
+
+        /** 采集间隔可调范围（秒）。 */
+        const val MIN_INTERVAL = 30
+        const val MAX_INTERVAL = 600
 
         /** 预下载默认到 z16（街道级）。级别越高瓦片数增长越快。 */
         const val DEFAULT_MAP_ZOOM = 16

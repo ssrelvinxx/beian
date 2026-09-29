@@ -22,7 +22,7 @@ import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
 import android.os.Bundle
-import android.os.Looper
+import android.os.HandlerThread
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -78,6 +78,7 @@ class TrackService : Service() {
         locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
         repository = TrackRepository(this)
         settings = SettingsStore(this)
+        locationHandler = HandlerThread("track-location").apply { start() }
         createChannel()
     }
 
@@ -86,6 +87,14 @@ class TrackService : Service() {
             ACTION_STOP -> {
                 stopSelf()
                 return START_NOT_STICKY
+            }
+            ACTION_RELOAD -> {
+                // ⚠️ 采集间隔改了要重新注册定位请求，否则新值要等下次
+                // 服务重启才生效 —— 用户改完设置会发现「没反应」。
+                // startTracking() 里对 updatesRequested 有防护，
+                // 这里要先复位，才会用新间隔重新 requestUpdates。
+                updatesRequested = false
+                startTracking()
             }
             else -> startTracking()
         }
@@ -104,6 +113,14 @@ class TrackService : Service() {
      * 结果是一个点都收不到。
      */
     private var updatesRequested = false
+
+    /**
+     * 承载定位回调的后台线程。
+     *
+     * 不要用主线程 Looper：UI 忙时回调会排队延迟，也加重主线程负担。
+     * onCreate 里创建，onDestroy 里必须 quitSafely()，否则线程泄漏。
+     */
+    private lateinit var locationHandler: HandlerThread
 
     private fun startTracking() {
         startForegroundCompat()
@@ -165,9 +182,24 @@ class TrackService : Service() {
                 locationManager.requestLocationUpdates(
                     provider,
                     minTimeMs,
-                    0f, // 不设最小位移门槛：靠 minTime 控频，静止时也要有点
+                    // ⚠️ 位移门槛不能再是 0。
+                    //
+                    // 之前写 0f，注释是「靠 minTime 控频，静止时也要有点」——
+                    // 但 effect 是反的：minDistance=0 意味着**只要 provider
+                    // 有任何风吹草动就回调**（GPS 抖动、基站/WiFi 切换），
+                    // 系统看到的是一个持续活跃的定位请求，耗电且显眼。
+                    //
+                    // 给一个门槛后，静止时不再持续回调；移动时按 minTime
+                    // 节流仍能落点。取值见 MIN_DISTANCE_M 的注释。
+                    MIN_DISTANCE_M,
                     locationListener,
-                    Looper.getMainLooper(),
+                    // ⚠️ 用后台线程的 Looper，不要用主线程。
+                    //
+                    // 主线程正在忙 UI（滚动、地图重绘、重组）时，定位回调
+                    // 会在同一队列里排队：既让回调延迟，也加重主线程负担。
+                    // 定位回调本身只是落库（内部已切到 IO 作用域），
+                    // 放后台线程完全够用。线程在 onDestroy 里退出。
+                    locationHandler.looper,
                 )
                 registeredProviders.add(provider)
             } catch (e: SecurityException) {
@@ -332,6 +364,8 @@ class TrackService : Service() {
         unregisterEventReceiver()
         tickerJob?.cancel()
         scope.cancel()
+        // 定位回调所在的后台线程必须退出，否则每次服务重建都漏一个线程
+        runCatching { locationHandler.quitSafely() }
         running = false
         super.onDestroy()
     }
@@ -341,12 +375,27 @@ class TrackService : Service() {
     companion object {
         const val ACTION_START = "com.beian.tracker.START"
         const val ACTION_STOP = "com.beian.tracker.STOP"
+
+        /** 让服务按最新设置重新注册定位请求（间隔变更后调用）。 */
+        const val ACTION_RELOAD = "com.beian.tracker.RELOAD"
         private const val TAG = "TrackService"
         private const val CHANNEL_ID = "beian_tracking"
         private const val NOTIF_ID = 1001
 
         /** 「最近已知位置」的最大可接受年龄：超过就当过期，不用它补点。 */
         private const val LAST_KNOWN_MAX_AGE_MS = 2 * 60 * 1000L
+
+        /**
+         * 定位更新的最小位移门槛（米）。
+         *
+         * 取 10m 的理由：
+         *   · 常见 GPS 的静态抖动在 5~10m 量级，设为 0 会把抖动全收下来 ——
+         *     这正是「系统一直在用定位」的观感来源之一。
+         *   · 门槛太大（如 50m）会让慢速步行（约 1.4m/s）连续几分钟不落点，
+         *     轨迹出现空档。
+         * 10m 能滤掉绝大多数抖动，又不至于卡住步行。
+         */
+        private const val MIN_DISTANCE_M = 10f
 
         /**
          * 服务是否正在运行。
@@ -371,6 +420,19 @@ class TrackService : Service() {
         fun stop(context: Context) {
             val intent = Intent(context, TrackService::class.java).setAction(ACTION_STOP)
             context.startService(intent)
+        }
+
+        /**
+         * 让正在运行的服务按最新设置重新注册定位请求。
+         *
+         * 服务只在启动时读一次间隔（`intervalSec.first()`），之后不监听设置变化。
+         * 改了间隔不通知它，新值就得等服务重启才生效。
+         * 没在跑时不必发（下次启动自然会读最新值）。
+         */
+        fun reload(context: Context) {
+            if (!running) return
+            val intent = Intent(context, TrackService::class.java).setAction(ACTION_RELOAD)
+            runCatching { context.startService(intent) }
         }
 
         /**

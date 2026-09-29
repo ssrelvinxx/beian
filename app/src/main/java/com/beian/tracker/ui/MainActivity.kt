@@ -74,7 +74,7 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
      *   2. 20 个 `stateIn(WhileSubscribed(5_000))` 全部退订再重订，
      *      每次都重新查数据库。
      *   3. 各页 LaunchedEffect 重跑（staysOfDay 会重算当天全部点位）。
-     *   4. 这一切还和采集线程（每 60 秒写库）叠在一起。
+     *   4. 这一切还和采集线程（周期写库）叠在一起。
      *
      * 合起来就是「采集时来回切 UI 页卡顿」—— 不是某一处的锅，是结构问题。
      *

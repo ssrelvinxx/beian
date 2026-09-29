@@ -56,6 +56,11 @@
     <string name="settings_map">地图</string>
     <string name="settings_map_desc">使用高德瓦片（中文地名，国内可直连），无需申请 Key。</string>
     <string name="settings_permissions">权限</string>
+    <string name="settings_interval">采集间隔</string>
+    <string name="settings_interval_desc">间隔越短轨迹越细，但更耗电、系统定位提示也更明显。步行 2 分钟够用；骑行或驾车建议 1 分钟以内。</string>
+    <string name="settings_interval_current">当前：%1$s</string>
+    <string name="settings_interval_sec">%1$d 秒</string>
+    <string name="settings_interval_min">%1$d 分</string>
     <string name="settings_perm_location">定位权限</string>
     <string name="settings_perm_usage">使用情况访问</string>
     <string name="settings_granted">已授权</string>
@@ -154,8 +159,7 @@
     <string name="settings_bg_battery_btn">去允许</string>
     <string name="settings_bg_autostart">允许自启动</string>
     <string name="settings_bg_autostart_desc">%1$s 需要这个才能在重启后继续记录</string>
-    <string name="settings_bg_autostart_btn">去设置</string>
-    <string name="settings_bg_note">授权后息屏也能持续记录，不会断点。</string>
+    <string name="settings_bg_autostart_btn">去设置</string>    <string name="settings_bg_note">授权后息屏也能持续记录，不会断点。</string>
     <string name="settings_bg_vendor_note">%1$s 有额外的后台限制，建议同时在系统设置里允许「自启动」和「后台运行」。</string>
     <string name="bg_warn_title">后台运行受限</string>
     <string name="bg_warn_desc">点此授权，否则息屏后轨迹会断点、事件会丢。</string>

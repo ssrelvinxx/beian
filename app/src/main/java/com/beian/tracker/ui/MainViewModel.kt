@@ -231,7 +231,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun setInterval(seconds: Int) {
-        viewModelScope.launch { settings.setIntervalSec(seconds) }
+        viewModelScope.launch {
+            settings.setIntervalSec(seconds)
+            // 服务只在启动时读一次间隔，改完必须通知它重新注册，
+            // 否则用户看到的是「设置改了但没生效」。
+            TrackService.reload(getApplication())
+        }
     }
 
     fun setMyNickname(name: String) {

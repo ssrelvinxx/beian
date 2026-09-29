@@ -17,7 +17,7 @@ import kotlinx.coroutines.launch
 
 /**
  * 实时事件接收器：监听屏幕开关、充电插拔、电量、网络变化，
- * 直接写入事件表，弥补 60 秒轮询抓不到的瞬时事件。
+ * 直接写入事件表，弥补周期轮询抓不到的瞬时事件。
  *
  * 在 TrackService 运行时注册（registerReceiver），随服务一起销毁。
  *
@@ -41,7 +41,7 @@ class EventReceiver : BroadcastReceiver() {
         when (action) {
             Intent.ACTION_SCREEN_ON -> {
                 pending.add(EventType.SCREEN_ON to "TA打开了手机屏幕")
-                // 当天第 1 次亮屏 —— 由广播判定，比 60 秒轮询准得多
+                // 当天第 1 次亮屏 —— 由广播判定，比周期轮询准得多
                 pending.add(EventType.FIRST_OPEN_TODAY to "TA今天第1次点亮了屏幕")
             }
 

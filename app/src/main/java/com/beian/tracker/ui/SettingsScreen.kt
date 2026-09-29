@@ -92,6 +92,11 @@ fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
             }
         }
 
+        // ── 采集间隔 ──────────────────────────────────────────────────────────
+        // 这个设置以前只存在于代码里（setIntervalSec 没有任何 UI 入口），
+        // 用户永远只能用默认值，也就没法按自己的耗电/精度偏好调整。
+        IntervalSection(vm)
+
         // ── 后台常驻 ──────────────────────────────────────────────────────────
         BackgroundSection()
 

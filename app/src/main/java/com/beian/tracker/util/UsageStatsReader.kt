@@ -56,6 +56,22 @@ object UsageStatsReader {
     /**
      * 读取今日各 App 的使用时长，按使用时长降序。
      * 无权限时返回空列表。
+     *
+     * ⚠️ 改用 `queryUsageStats`（系统聚合），不再用 `queryEvents` 自己累加。
+     *
+     * 为什么换：自己按事件累加看着直接，实际很难做对 ——
+     * 已确认的漏算是「同一个 App 连续两次 MOVE_TO_FOREGROUND」
+     * （Activity 重建、权限弹窗返回、分屏切换都会触发）：
+     * 后一次会直接覆盖前一次的起始时间，前一段时长凭空消失。
+     * 另有熄屏边界、无 BACK 直接切前台等边界，各 ROM 行为还不一致。
+     *
+     * `queryUsageStats` 由系统自己算，好处有两层：
+     *   1. 结果与「设置 → 应用 → 使用时长」一致，用户对照不会觉得数据错。
+     *   2. 不必再维护那套易错的状态机。
+     *
+     * 代价：只有总时长，拿不到「几点到几点在用」。
+     * 所以时间轴与「TA 打开了 XX」事件仍然走 [todaySessions]/[queryEvents]，
+     * 那是唯一能拿到精确起止时间的接口。两者分工，不是替换关系。
      */
     fun todayPerApp(context: Context): List<AppUsageStat> {
         if (!hasPermission(context)) return emptyList()
@@ -64,6 +80,49 @@ object UsageStatsReader {
         val start = TimeUtil.startOfToday()
         val end = System.currentTimeMillis()
 
+        // INTERVAL_DAILY + 覆盖「今天」的区间：系统会给出该区间内各包的聚合。
+        val stats = runCatching { usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, start, end) }
+            .getOrNull()
+            .orEmpty()
+
+        val out = stats
+            // ⚠️ 必须过滤：queryUsageStats 会带回一堆 totalTimeInForeground=0
+            // 的历史包（系统保留最近若干天的记录），不过滤会列出一堆没用的 App。
+            .filter { it.totalTimeInForeground > 0 }
+            .mapNotNull { s ->
+                val pkg = s.packageName ?: return@mapNotNull null
+                AppUsageStat(
+                    packageName = pkg,
+                    appLabel = labelOf(context, pkg),
+                    usageMs = s.totalTimeInForeground,
+                    // 系统聚合里 lastTimeUsed 是该包最后一次在前台的时间；
+                    // launchCount 系统不提供，用 0 表示未知（界面不展示它）。
+                    launchCount = 0,
+                    lastUsed = s.lastTimeUsed,
+                )
+            }
+
+        if (out.isEmpty()) {
+            // 个别 ROM（或数据刚重置）下 queryUsageStats 会返回空，
+            // 此时退回事件累加 —— 有漏算也比整块空白好。
+            return todayPerAppFromEvents(context, start, end)
+        }
+        return out.sortedByDescending { it.usageMs }
+    }
+
+    /**
+     * 事件累加版（回退路径）。
+     *
+     * ⚠️ 已修掉「同一 App 连续两次 MOVE_TO_FOREGROUND 丢时长」的问题：
+     * 收到新的前台事件时，若该包已有未结算的起点，先把它结算掉再覆盖。
+     * 这个函数只在 [todayPerApp] 拿不到系统聚合时才会用到。
+     */
+    private fun todayPerAppFromEvents(
+        context: Context,
+        start: Long,
+        end: Long,
+    ): List<AppUsageStat> {
+        val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
         val events = usm.queryEvents(start, end) ?: return emptyList()
         val event = UsageEvents.Event()
 
@@ -72,32 +131,37 @@ object UsageStatsReader {
         val lastSeen = HashMap<String, Long>()
         val resumedAt = HashMap<String, Long>()
 
-        // 记录事件发生时的屏幕状态，熄屏期间的“前台”不计入使用
-        var screenOn = false
+        /** 结算某个包从 [at] 到 [until] 的前台时长。 */
+        fun settle(pkg: String, at: Long, until: Long) {
+            if (at > 0 && until > at) usageMs[pkg] = (usageMs[pkg] ?: 0L) + (until - at)
+        }
 
         while (events.hasNextEvent()) {
             events.getNextEvent(event)
             when (event.eventType) {
-                UsageEvents.Event.SCREEN_INTERACTIVE -> screenOn = true
+                // 熄屏：把仍在「前台」的 App 结算掉。
+                // 这里不需要额外的 screenOn 标志 —— 熄屏本身就以
+                // SCREEN_NON_INTERACTIVE 事件的形式出现，直接结算即可。
+                // （此前有个只赋值不读取的 screenOn 变量，已删除。）
                 UsageEvents.Event.SCREEN_NON_INTERACTIVE -> {
-                    screenOn = false
-                    // 熄屏：把仍在“前台”的 App 结算掉
                     resumedAt.keys.toList().forEach { pkg ->
                         val at = resumedAt.remove(pkg) ?: return@forEach
-                        if (at > 0) {
-                            usageMs[pkg] = (usageMs[pkg] ?: 0L) + (event.timeStamp - at)
-                        }
+                        settle(pkg, at, event.timeStamp)
                     }
                 }
                 UsageEvents.Event.MOVE_TO_FOREGROUND -> {
                     val pkg = event.packageName ?: continue
-                    // 切换到新 App：先结算上一个
+                    // 其他包让位，先结算
                     resumedAt.keys.toList().forEach { prev ->
                         if (prev != pkg) {
                             val at = resumedAt.remove(prev) ?: return@forEach
-                            if (at > 0) usageMs[prev] = (usageMs[prev] ?: 0L) + (event.timeStamp - at)
+                            settle(prev, at, event.timeStamp)
                         }
                     }
+                    // ⚠️ 同一个包重复收到前台事件时，先结算上一段再覆盖起点。
+                    // 之前这里直接 resumedAt[pkg] = timestamp，
+                    // 前一段时长就丢了（Activity 重建等场景很常见）。
+                    resumedAt[pkg]?.let { prevAt -> settle(pkg, prevAt, event.timeStamp) }
                     resumedAt[pkg] = event.timeStamp
                     launches[pkg] = (launches[pkg] ?: 0) + 1
                     lastSeen[pkg] = event.timeStamp
@@ -105,16 +169,14 @@ object UsageStatsReader {
                 UsageEvents.Event.MOVE_TO_BACKGROUND -> {
                     val pkg = event.packageName ?: continue
                     val at = resumedAt.remove(pkg) ?: 0L
-                    if (at > 0) usageMs[pkg] = (usageMs[pkg] ?: 0L) + (event.timeStamp - at)
+                    settle(pkg, at, event.timeStamp)
                     lastSeen[pkg] = event.timeStamp
                 }
             }
         }
 
         // 收尾：仍在使用中的 App 算到当前
-        resumedAt.forEach { (pkg, at) ->
-            if (at > 0) usageMs[pkg] = (usageMs[pkg] ?: 0L) + (end - at)
-        }
+        resumedAt.forEach { (pkg, at) -> settle(pkg, at, end) }
 
         return usageMs.entries
             .filter { it.value > 0 }

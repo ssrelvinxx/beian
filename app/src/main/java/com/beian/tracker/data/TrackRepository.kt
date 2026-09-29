@@ -32,7 +32,7 @@ class TrackRepository(private val context: Context) {
      * 上一轮写入的 App 片段指纹（条数 to 最后一条开始时间）。
      *
      * 用来跳过「数据没变」时的 replaceDay 重写 —— 那个操作是删全表再插，
-     * 每 60 秒跑一次纯属浪费，还会占住写锁拖慢界面。
+     * 每轮都跑一次纯属浪费，还会占住写锁拖慢界面。
      *
      * 只在采集线程（TrackService 的 ticker 协程）读写，单线程访问，
      * 用 @Volatile 保证可见性即可，不需要加锁。
@@ -169,7 +169,7 @@ class TrackRepository(private val context: Context) {
         if (usageUsable) {
             val sessions = UsageStatsReader.todaySessions(context)
             // ⚠️ 性能：replaceDay 是「DELETE 当天全部 + 重新插入」，
-            // 而轮询每 60 秒跑一次。当天片段数上百时，这是一天几万次的无谓重写，
+            // 而轮询每轮都跑一次。当天片段数上百时，这是一天几万次的无谓重写，
             // 期间还占着写锁，界面查询会被拖住（卡顿）。
             //
             // 片段集合只在「有新的 App 切换」时才变，但**正在使用中的那一条**
@@ -200,7 +200,7 @@ class TrackRepository(private val context: Context) {
 
                 // 同一批片段转成「TA 打开了 XX」事件，写进报备流。
                 //
-                // ⚠️ 性能：UsageStats 每天会还原出上百个片段，而轮询每 60 秒跑一次。
+                // ⚠️ 性能：UsageStats 每天会还原出上百个片段，而轮询每轮都跑一次。
                 // 如果每次都全量 insertAll，一天要写十几万次（内容还都一样）。
                 // 所以先查「已记到哪个时间点」，只处理它之后的片段。
                 //
