@@ -2,6 +2,7 @@ package com.beian.tracker.util
 
 import android.app.DownloadManager
 import android.content.BroadcastReceiver
+import android.content.ClipData
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -165,15 +166,48 @@ object ApkInstaller {
                 "${context.packageName}.fileprovider",
                 file,
             )
-            val intent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(uri, "application/vnd.android.package-archive")
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            context.startActivity(intent)
+            context.startActivity(buildInstallIntent(context, uri))
         } catch (e: Exception) {
             Toast.makeText(context, "无法打开安装界面：${e.message}", Toast.LENGTH_LONG).show()
         }
+    }
+
+    /**
+     * 构造拉起系统安装界面的 Intent。
+     *
+     * ⚠️ 必须把 uri 同时放进 [ClipData]。
+     *
+     * 包安装器跑在**另一个进程**（com.android.packageinstaller）。
+     * 从 Android 10 起，仅靠 `FLAG_GRANT_READ_URI_PERMISSION` 已经不保证
+     * 把 FileProvider 的读权限传递过去 —— 实测表现就是安装界面能弹出，
+     * 但立刻报「解析软件包时出现问题」，或者一闪就退，包装不上。
+     *
+     * 放进 ClipData 后，系统会把「这个 uri 可以读」跟随 Intent 一起
+     * 授权给接收方，安装器才拿得到文件内容。
+     *
+     * 另外显式 setPackage 到系统安装器：不指定时某些 ROM 会弹
+     * 应用选择器让用户挑「用什么打开」，那个列表里通常没有安装器，
+     * 用户就以为「点了没反应」。
+     */
+    private fun buildInstallIntent(context: Context, uri: Uri): Intent {
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "application/vnd.android.package-archive")
+            // ClipData 是权限传递的关键，见上面注释
+            clipData = ClipData.newRawUri("apk", uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        // 优先交给系统安装器；找不到就退回原来的行为（不加 setPackage）
+        val installer = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "application/vnd.android.package-archive")
+            clipData = ClipData.newRawUri("apk", uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            setPackage("com.android.packageinstaller")
+        }
+        @Suppress("DEPRECATION")
+        val hasInstaller =
+            context.packageManager.resolveActivity(installer, 0) != null
+        return if (hasInstaller) installer else intent
     }
 
     /** 已完成下载的 APK 文件（如果存在），用于「已下载，去安装」。 */
@@ -197,12 +231,7 @@ object ApkInstaller {
                 "${context.packageName}.fileprovider",
                 file,
             )
-            val intent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(uri, "application/vnd.android.package-archive")
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            context.startActivity(intent)
+            context.startActivity(buildInstallIntent(context, uri))
         } catch (e: Exception) {
             Toast.makeText(context, "无法安装：${e.message}", Toast.LENGTH_LONG).show()
         }
