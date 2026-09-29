@@ -73,6 +73,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val repository = TrackRepository(app)
     private val settings = SettingsStore(app)
 
+    init {
+        // 打开 App 就把系统里现有的最近 7 天 App 使用数据回填进库。
+        //
+        // 放在 ViewModel 而不是 TrackService：后者只在「采集开关打开」
+        // 且拿到定位权限时才启动，而回填只需要「使用情况访问」权限。
+        // 放这里能保证只要打开过 App 就会执行一次。
+        //
+        // 内部有幂等标记，同一进程只会真正跑一次；
+        // 采集服务里也调了一次，两处互为兜底。
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { repository.backfillDailyUsage() }
+        }
+    }
+
     /** 当前查看的日期（默认今天）。 */
     private val _selectedDay = MutableStateFlow(TimeUtil.dayKey())
     val selectedDay: StateFlow<String> = _selectedDay.asStateFlow()

@@ -125,6 +125,16 @@ class TrackService : Service() {
     private fun startTracking() {
         startForegroundCompat()
         registerEventReceiver()
+
+        // ⚠️ App 使用数据回填必须在「定位权限」守卫**之前**。
+        //
+        // 它只依赖「使用情况访问」权限，和定位无关。放在守卫后面的话，
+        // 用户没给定位权限时整个 startTracking 会提前 return，
+        // 回填就永远不会执行 —— 统计页除了今天之外全是空的。
+        scope.launch {
+            runCatching { repository.backfillDailyUsage() }
+        }
+
         if (!hasLocationPermission()) return
 
         scope.launch {

@@ -18,6 +18,27 @@ import kotlinx.coroutines.flow.combine
  */
 class TrackRepository(private val context: Context) {
 
+    companion object {
+        /**
+         * 启动时回填的 App 使用天数。
+         *
+         * 取 7 是因为系统 UsageStats 的保留期通常就是 7~14 天 ——
+         * 要得更多没有意义（系统里就没有），反而白白拉长查询区间。
+         * 回填后本地库会**持续累积**，不再受系统保留期限制。
+         */
+        const val BACKFILL_DAYS = 7
+
+        /**
+         * 回填是否已跑过（进程内）。
+         *
+         * ⚠️ 必须是 static 而不是实例字段：TrackRepository 每次都是 new 的
+         * （MainViewModel 一个、TrackService 一个），实例字段挡不住两处都跑。
+         * 放伴生对象里，同一进程内只真正回填一次。
+         */
+        @Volatile
+        private var usageBackfilled = false
+    }
+
     private val db = AppDatabase.get(context)
 
     private val pointDao = db.trackPointDao()
@@ -121,6 +142,63 @@ class TrackRepository(private val context: Context) {
     /**
      * 采集一次设备状态并落库，同时根据与上次状态的差异生成报备事件。
      */
+    /**
+     * 把系统里现有的最近 [DAYS] 天 App 使用数据**回填**进本地库。
+     *
+     * 为什么需要：
+     *   采集服务每轮只写「今天」这一行。历史的天从来不写 ——
+     *   于是统计页想按天看排行时，除了今天之外全是空的。
+     *   而系统的 UsageStats 里其实存着最近 7~14 天（各 ROM 不同）。
+     *
+     * 为什么用「启动跑一次」而不是「每轮都跑」：
+     *   `queryUsageStats` 覆盖 7 天区间要遍历几百个 UsageStats 桶，
+     *   每轮（默认 10 分钟一次）都做一次纯属浪费。历史数据不会变，
+     *   补一次就够 —— 今天的数据由原有的单天路径持续刷新。
+     *
+     * 为什么必须尽早做：
+     *   系统只保留最近 7~14 天，**过了就被清掉，再也拿不回来**。
+     *   越早回填，历史攒得越全。
+     *
+     * 幂等：某天已有数据时，upsert 会按期长覆盖为系统当前值，
+     * 不会产生重复行（主键是 sourceId + dayKey + packageName）。
+     */
+    suspend fun backfillDailyUsage(days: Int = BACKFILL_DAYS) {
+        // 用同步块做「检查 + 置位」，避免两处（ViewModel / Service）
+        // 同时进来都通过检查、把同一批数据写两遍。
+        synchronized(this) {
+            if (usageBackfilled) return
+            usageBackfilled = true
+        }
+        if (!UsageStatsReader.hasPermission(context)) return
+
+        val byDay = runCatching { UsageStatsReader.dailyPerApp(context, days) }
+            .getOrElse {
+                // 回填失败不影响主流程；允许下次再试
+                synchronized(this) { usageBackfilled = false }
+                return
+            }
+        if (byDay.isEmpty()) return
+
+        byDay.forEach { (day, list) ->
+            appUsageDao.replaceDay(
+                LOCAL_SOURCE,
+                day,
+                list.map {
+                    AppUsage(
+                        sourceId = LOCAL_SOURCE,
+                        dayKey = day,
+                        packageName = it.packageName,
+                        appLabel = it.appLabel,
+                        usageMs = it.usageMs,
+                        launchCount = it.launchCount,
+                        lastUsed = it.lastUsed,
+                    )
+                },
+            )
+        }
+    }
+
+
     suspend fun captureSnapshot() {
         val now = System.currentTimeMillis()
         val day = TimeUtil.dayKey(now)

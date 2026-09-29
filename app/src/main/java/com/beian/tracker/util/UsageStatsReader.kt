@@ -111,6 +111,73 @@ object UsageStatsReader {
     }
 
     /**
+     * 最近 [days] 天的各 App 使用时长，**按天分组**返回。
+     *
+     * 一次查询覆盖整个区间，再自己按天切分 —— 不做 N 次查询。
+     *
+     * 为什么能一次查完：
+     * `queryUsageStats(INTERVAL_DAILY, start, end)` 在区间跨多天时，
+     * 返回的就是按系统自己的日边界切好的若干个"桶"。对每个桶取其
+     * `firstTimeStamp`/`lastTimeStamp` 即可判断它属于哪一天。
+     *
+     * 归天策略（重要，决定准确性）：
+     *   用桶的 [UsageStats.lastTimeStamp] 反推日 key —— 取桶结束所在的
+     *   自然日。桶是系统按天切的，结束时间就落在那一天里。
+     *   某个桶跨了午夜（系统偶尔会这样合并）时，归到它**结束**的那天，
+     *   总时长不丢，只是归属日可能与直觉差一天。这种边界极少见，
+     *   相比"少一整天数据"，归错半天的代价小得多。
+     *
+     * 返回：Map<yyyy-MM-dd, List<AppUsageStat>>，只含有时长的 App。
+     * 空 Map 表示没权限或系统没数据。
+     */
+    fun dailyPerApp(context: Context, days: Int): Map<String, List<AppUsageStat>> {
+        if (!hasPermission(context)) return emptyMap()
+        if (days <= 0) return emptyMap()
+
+        val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+        // 区间：从 (days-1) 天前的 0 点，到明天 0 点（右开，含今天整天）
+        val start = TimeUtil.startOfDay(days - 1)
+        val end = TimeUtil.endOfDay(0)
+        // 允许的日期字符串范围（yyyy-MM-dd 的字典序就是时间序），
+        // 用来过滤系统可能带回的区间外数据，比解析回毫秒简单也不易错。
+        val minDay = TimeUtil.dayKey(start)
+        val maxDay = TimeUtil.dayKey(end - 1)
+
+        // 先按区间整体查一次
+        val stats = runCatching {
+            usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, start, end)
+        }.getOrNull().orEmpty()
+
+        val out = LinkedHashMap<String, MutableList<AppUsageStat>>()
+
+        stats.forEach { s ->
+            val pkg = s.packageName ?: return@forEach
+            if (s.totalTimeInForeground <= 0) return@forEach
+
+            // 用桶的结束时间归属到某一天
+            val dayTs = if (s.lastTimeStamp > 0) s.lastTimeStamp else s.firstTimeStamp
+            if (dayTs <= 0) return@forEach
+            val day = TimeUtil.dayKey(dayTs)
+
+            // 只收进区间内的天（防止系统带回区间外的桶）
+            if (day < minDay || day > maxDay) return@forEach
+
+            out.getOrPut(day) { mutableListOf() }.add(
+                AppUsageStat(
+                    packageName = pkg,
+                    appLabel = labelOf(context, pkg),
+                    usageMs = s.totalTimeInForeground,
+                    launchCount = 0,
+                    lastUsed = s.lastTimeUsed,
+                ),
+            )
+        }
+
+        // 每个天内部按时长降序
+        return out.mapValues { (_, list) -> list.sortedByDescending { it.usageMs } }
+    }
+
+    /**
      * 事件累加版（回退路径）。
      *
      * ⚠️ 已修掉「同一 App 连续两次 MOVE_TO_FOREGROUND 丢时长」的问题：
