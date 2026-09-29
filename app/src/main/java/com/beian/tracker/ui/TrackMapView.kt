@@ -25,6 +25,7 @@ import com.beian.tracker.R
 import com.beian.tracker.data.TrackPoint
 import com.beian.tracker.util.MapTileStore
 import com.beian.tracker.util.AmapTileSource
+import com.beian.tracker.util.TimeUtil
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.floor
@@ -300,19 +301,35 @@ private fun drawTrack(
     }
 
     if (geoPoints.isNotEmpty()) {
+        // 起终点标记带上**获取时间**。
+        //
+        // 光有「起点/终点」两个词，回看时看不出几点到、几点离开 ——
+        // 而时间和坐标一样都在数据里（TrackPoint.timestamp），
+        // 顺手显示出来，不需要查任何外部服务。
+        //
+        // 时间写进 snippet（副标题），点开气泡就是「起点 / 08:31」两行。
+        // 不用 Marker 的文字标签扩展 API —— 那套成员名在不同 osmdroid
+        // 版本间有差异，写错就是编译不过，不值得为它冒险。
+        // 想在图上常显时间的话，走「底部信息条」那条路（见 TrackScreen），
+        // 那边的排版完全在我们自己手里。
+        val startPoint = points.firstOrNull()
+        val endPoint = points.lastOrNull()
+
         view.overlays.add(
-            Marker(view).apply {
-                position = geoPoints.first()
-                title = startLabel
-                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-            },
+            makeMarker(
+                view = view,
+                label = startLabel,
+                geoPoint = geoPoints.first(),
+                timestamp = startPoint?.timestamp,
+            ),
         )
         view.overlays.add(
-            Marker(view).apply {
-                position = geoPoints.last()
-                title = endLabel
-                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-            },
+            makeMarker(
+                view = view,
+                label = endLabel,
+                geoPoint = geoPoints.last(),
+                timestamp = endPoint?.timestamp,
+            ),
         )
     }
 
@@ -338,6 +355,29 @@ private fun drawTrack(
     fitToTrack(view, geoPoints, keepOverlay, retries = 0)
 
     view.invalidate()
+}
+
+/**
+ * 造一个「起点/终点 + 时间」标记。
+ *
+ * 时间放在 [Marker.snippet]（副标题）里 —— 这是 osmdroid 从早期版本
+ * 就有的稳定公共字段，点开气泡会显示在主标题下方两行：
+ *
+ *     起点
+ *     08:31
+ *
+ * [timestamp] 为 null 时不写 snippet（调用处已判空，正常不会发生）。
+ */
+private fun makeMarker(
+    view: MapView,
+    label: String,
+    geoPoint: GeoPoint,
+    timestamp: Long?,
+): Marker = Marker(view).apply {
+    position = geoPoint
+    title = label
+    timestamp?.let { snippet = TimeUtil.time(it) }
+    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
 }
 
 /** 把地图缩放到刚好装下 [geoPoints]。 */

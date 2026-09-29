@@ -163,6 +163,38 @@ fun TrackScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                 .padding(horizontal = 16.dp),
         )
 
+        // ── 起终点时间 ────────────────────────────────────────────────────────
+        //
+        // 紧贴地图下方常显，不用点气泡 —— 回看轨迹时最想先知道的就是
+        // 「几点从哪出发、几点到哪」，扫一眼就要看到。
+        //
+        // ⚠️ 刻意不用 Marker 的气泡来承担这个信息：
+        //    气泡要点击才出现，等于藏起来了；而且 osmdroid 的
+        //    文字标签扩展 API 各版本成员名不一致，写错编译不过。
+        //    放在这里排版完全由我们掌握，也顺带能显示「共几个点」。
+        if (points.isNotEmpty()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                // 起点：左对齐，占一半
+                EndpointTime(
+                    label = stringResource(R.string.map_start),
+                    timestamp = points.first().timestamp,
+                    modifier = Modifier.weight(1f),
+                )
+                // 终点：右对齐，占一半
+                EndpointTime(
+                    label = stringResource(R.string.map_end),
+                    timestamp = points.last().timestamp,
+                    alignEnd = true,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+
         // 系统定位关着 → 明确告诉用户，并给一键去开启的入口。
         // 不说的话，地图就是一片空白，用户只会以为「坏了」。
         if (isLocal && locationGranted && !systemLocationOn) {
@@ -352,5 +384,40 @@ private fun StayRow(stay: Stay) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+    }
+}
+
+/**
+ * 起终点时间（地图下方常显）。
+ *
+ * 显示成两行：上行小字「起点/终点」，下行时间大字。
+ * 时间用 [TimeUtil.time] 的 HH:mm:ss —— 轨迹点的秒级差异有意义
+ * （比如刚好卡在某个整点前后），所以不截到分钟。
+ *
+ * [alignEnd] = true 时右对齐，让起终两端分别贴住左右，
+ * 中间自然留白，比两个都左对齐更容易看出是「一头一尾」。
+ */
+@Composable
+private fun EndpointTime(
+    label: String,
+    timestamp: Long,
+    modifier: Modifier = Modifier,
+    alignEnd: Boolean = false,
+) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = if (alignEnd) Alignment.End else Alignment.Start,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = TimeUtil.time(timestamp),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.primary,
+        )
     }
 }
