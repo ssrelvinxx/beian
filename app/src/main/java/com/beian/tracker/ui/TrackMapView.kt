@@ -3,15 +3,18 @@ package com.beian.tracker.ui
 import android.graphics.Color
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.clipToBounds
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
@@ -136,13 +139,46 @@ fun TrackMapView(
         }
     }
 
-    Box(modifier = modifier) {
+    // ⚠️ 必须裁切。
+    //
+    // MapView 是**原生 View**，不受 Compose 的父容器约束：用户放大/拖动地图时，
+    // 它自身的绘制范围会溢出这个 Box，直接压在下面的统计卡片、停留时间轴上
+    // （表现就是「地图放大后挡住其他 UI」）。
+    //
+    // clipToBounds() 让子 View 的绘制被限制在 Box 边界内。
+    // 顺带加圆角，和卡片风格统一。
+    Box(
+        modifier = modifier
+            .clipToBounds()
+            .clip(RoundedCornerShape(12.dp)),
+    ) {
+        // ⚠️ 用 points 的「指纹」而不是 points 本身做 key。
+        //
+        // update 块在每次重组时都会执行，而重组非常频繁（地图自身 invalidate、
+        // 状态栏变化、采集每 60 秒落一个新点…）。原来的写法无条件调用
+        // drawTrack()，而它内部是 `removeAll` + 重建 Polyline + 逐个 Marker，
+        // 等于每次重组都把整条轨迹重画一遍 —— 点位一多就卡死。
+        //
+        // lastDrawKey 记住上次画的是什么，只有点位真的变了才重画。
+        val drawKey = remember { mutableStateOf<String?>(null) }
+
         AndroidView(
             modifier = Modifier.matchParentSize(),
             factory = { mapView },
             update = { view ->
                 applyOfflineMode(view, offlineMode)
-                drawTrack(view, points, startLabel, endLabel, myLocation)
+                // 指纹：点数 + 首尾点（足够区分「没变」和「新增/切换了日期」）
+                val key = buildString {
+                    append(points.size).append('|')
+                    points.firstOrNull()?.let { append(it.timestamp) }
+                    append('|')
+                    points.lastOrNull()?.let { append(it.timestamp) }
+                    append('|').append(startLabel).append(endLabel)
+                }
+                if (drawKey.value != key) {
+                    drawKey.value = key
+                    drawTrack(view, points, startLabel, endLabel, myLocation)
+                }
             },
         )
 
@@ -198,6 +234,9 @@ private fun drawTrack(
 ) {
     // 不能直接 clear() —— 会把「我的位置」浮层一起清掉。
     // 只摘掉上一次画的轨迹线和起终点标记。
+    //
+    // ⚠️ 这个方法只在点位**真的变化**时才会被调用（调用方用指纹拦掉了
+    // 无意义的重组重绘），所以这里的全量重建是可接受的。
     view.overlays.removeAll { it !== keepOverlay }
 
     val geoPoints = points.map { GeoPoint(it.latitude, it.longitude) }

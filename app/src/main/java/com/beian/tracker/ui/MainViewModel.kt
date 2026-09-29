@@ -404,7 +404,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             cacheDir = MapTileStore.tileCacheDir(app),
             tiles = tiles,
         ) { p ->
-            _downloadProgress.value = p
+            // ⚠️ 不要每张瓦片都刷新 UI 状态。
+            //
+            // onProgress 每下载完一张就回调一次，几百张瓦片就是几百次
+            // _downloadProgress.value 更新 → 每次都会触发 Compose 重组。
+            // 进度条只需「大致在动」，所以按百分比节流：
+            // 每跨过 2% 才刷新一次，首末两次必刷。
+            val lastPercent = _downloadProgress.value?.percent ?: -1
+            if (p.finished || lastPercent < 0 || p.percent - lastPercent >= 2 ||
+                p.percent == 100
+            ) {
+                _downloadProgress.value = p
+            }
             if (p.finished) {
                 post(
                     "离线地图已下载：${p.done - p.failed}/${p.total} 个瓦片" +

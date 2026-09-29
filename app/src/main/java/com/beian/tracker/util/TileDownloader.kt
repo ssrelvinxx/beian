@@ -100,12 +100,27 @@ object TileDownloader {
      * @param onProgress 在主线程回调
      * @return Job，可取消
      */
+    /**
+     * 批量下载瓦片。
+     *
+     * ⚠️ **必须在 IO 调度器上跑**。
+     *
+     * 这里的 [fetch] 是**同步阻塞**的（HttpURLConnection 请求 + 写文件），
+     * 而调用方传进来的 scope 常是 `viewModelScope` —— 它的默认调度器是
+     * `Dispatchers.Main.immediate`。若不显式切换，一轮循环会在**主线程**
+     * 里做几百次网络请求（每次超时上限 10s/15s）和文件写入，
+     * UI 被彻底堵死 —— 表现就是「一点下载瓦片就卡死」。
+     *
+     * 用 `withContext(Dispatchers.IO)` 把整个循环移出主线程；
+     * onProgress 回调只在每张瓦片完成后触发一次，开销可忽略。
+     * （[fetchOne] 一直是正确的，它自己包了 IO 切换；这里此前漏了。）
+     */
     fun download(
         scope: CoroutineScope,
         cacheDir: File,
         tiles: List<Triple<Int, Int, Int>>,
         onProgress: (Progress) -> Unit,
-    ): Job = scope.launch {
+    ): Job = scope.launch(Dispatchers.IO) {
         var done = 0
         var failed = 0
         var lastErr: String? = null

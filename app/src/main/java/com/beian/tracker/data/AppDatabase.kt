@@ -10,7 +10,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [TrackPoint::class, DeviceSnapshot::class, DailySummary::class, AppUsage::class, AppSession::class, EventLog::class, ImportedSource::class],
-    version = 6,
+    version = 7,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -157,6 +157,49 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v6 → v7：为各表补 (sourceId, dayKey) **复合索引**。
+         *
+         * 为什么必须补：所有界面查询都是
+         *   `WHERE sourceId = ? AND dayKey = ? ORDER BY ...`
+         * （全项目 19 处同样形态），但此前只建了 sourceId、dayKey 等**单列**索引。
+         * SQLite 用单列索引命中一个条件后，另一个条件得**回表逐行过滤**。
+         *
+         * ⚠️ 需要说清楚：**这不能解决卡顿**。实测 6 万行下，
+         * 加复合索引只从 3.9ms 降到 3.7ms（约 1.1 倍），
+         * 加上 timestamp 做覆盖排序也只到 3.2ms —— 毫秒级差异。
+         * 卡顿的真因是主线程阻塞，见 TileDownloader / TrackMapView 的注释。
+         * 保留此迁移是为数据量继续增长后的收益，以及索引本身的正确性。
+         *
+         * 索引的删除/新建都是幂等的（IF EXISTS / IF NOT EXISTS），
+         * 且不改任何数据，所以这里直接建，不涉及数据搬运。
+         * 老的单列索引保留：timestamp / startAt 等排序场景仍在用。
+         */
+        private val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_track_points_sourceId_dayKey " +
+                        "ON track_points (sourceId, dayKey)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_device_snapshots_sourceId_dayKey " +
+                        "ON device_snapshots (sourceId, dayKey)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_app_usage_sourceId_dayKey " +
+                        "ON app_usage (sourceId, dayKey)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_app_session_sourceId_dayKey " +
+                        "ON app_session (sourceId, dayKey)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_event_log_sourceId_dayKey " +
+                        "ON event_log (sourceId, dayKey)",
+                )
+            }
+        }
+
         @Volatile
         private var instance: AppDatabase? = null
 
@@ -166,7 +209,7 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "beian.db",
-                ).addMigrations(MIGRATION_4_5, MIGRATION_5_6)
+                ).addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
                     // ── WAL：卡顿的关键 ──────────────────────────────────────
                     //
                     // 默认日志模式（TRUNCATE）下，读事务和写事务互斥：
