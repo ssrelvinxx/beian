@@ -433,6 +433,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun cancelTileDownload() {
         downloadJob?.cancel()
+        // ⚠️ cancel() 不会中断已阻塞的 socket read，必须主动断开连接，
+        // 否则要等满 readTimeout（8 秒）才真正停下 —— 用户看到的就是「没反应」。
+        TileDownloader.abortCurrent()
         downloadJob = null
         _downloadProgress.value = null
     }

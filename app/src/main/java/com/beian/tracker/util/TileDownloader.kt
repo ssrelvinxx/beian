@@ -101,6 +101,26 @@ object TileDownloader {
      * @return Job，可取消
      */
     /**
+     * 正在进行的连接，供取消时主动断开。
+     *
+     * ⚠️ 为什么需要它：协程的 `cancel()` 只是把 isActive 置为 false，
+     * **无法中断已经阻塞在 read() 上的 HttpURLConnection** ——
+     * 最坏情况下要等满 readTimeout（15 秒）才会检查 isActive。
+     * 用户点了「取消」或切走页面，感觉就是「没反应 / 卡住」。
+     *
+     * 所以这里记住当前连接，取消时直接 disconnect()，
+     * 让阻塞中的 read 立刻抛异常退出。
+     */
+    @Volatile
+    private var activeConnection: HttpURLConnection? = null
+
+    /** 中断当前正在进行的瓦片请求（供取消使用）。 */
+    fun abortCurrent() {
+        runCatching { activeConnection?.disconnect() }
+        activeConnection = null
+    }
+
+    /**
      * 批量下载瓦片。
      *
      * ⚠️ **必须在 IO 调度器上跑**。
@@ -111,8 +131,6 @@ object TileDownloader {
      * 里做几百次网络请求（每次超时上限 10s/15s）和文件写入，
      * UI 被彻底堵死 —— 表现就是「一点下载瓦片就卡死」。
      *
-     * 用 `withContext(Dispatchers.IO)` 把整个循环移出主线程；
-     * onProgress 回调只在每张瓦片完成后触发一次，开销可忽略。
      * （[fetchOne] 一直是正确的，它自己包了 IO 切换；这里此前漏了。）
      */
     fun download(
@@ -126,23 +144,28 @@ object TileDownloader {
         var lastErr: String? = null
         onProgress(Progress(0, tiles.size, 0))
 
-        for ((z, x, y) in tiles) {
-            if (!isActive) break
-            val dest = tileFile(cacheDir, z, x, y)
-            if (dest.exists() && dest.length() > 0) {
-                // 已有缓存，跳过
+        try {
+            for ((z, x, y) in tiles) {
+                if (!isActive) break
+                val dest = tileFile(cacheDir, z, x, y)
+                if (dest.exists() && dest.length() > 0) {
+                    // 已有缓存，跳过
+                    done++
+                    onProgress(Progress(done, tiles.size, failed, lastErr))
+                    continue
+                }
+                val err = fetch(cacheDir, z, x, y)
                 done++
+                if (err != null) {
+                    failed++
+                    lastErr = err
+                }
                 onProgress(Progress(done, tiles.size, failed, lastErr))
-                continue
+                delay(THROTTLE_MS)
             }
-            val err = fetch(cacheDir, z, x, y)
-            done++
-            if (err != null) {
-                failed++
-                lastErr = err
-            }
-            onProgress(Progress(done, tiles.size, failed, lastErr))
-            delay(THROTTLE_MS)
+        } finally {
+            // 无论正常结束、取消还是异常，都别把连接留着
+            abortCurrent()
         }
     }
 
@@ -177,10 +200,15 @@ object TileDownloader {
             val url = URL(amapTileUrl(z, x, y))
             conn = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
-                connectTimeout = 10_000
-                readTimeout = 15_000
+                // 超时收紧：单张瓦片拿不到就跳过，别把整个队列拖住。
+                // 之前 10s/15s，一张卡住的瓦片就能让用户以为程序死了。
+                connectTimeout = 8_000
+                readTimeout = 8_000
                 setRequestProperty("User-Agent", USER_AGENT)
             }
+            // 登记，供 abortCurrent() 在取消时主动断开
+            activeConnection = conn
+
             val code = conn.responseCode
             if (code != 200) return "HTTP $code"
 
@@ -192,7 +220,8 @@ object TileDownloader {
         } catch (e: Exception) {
             e::class.java.simpleName
         } finally {
-            conn?.disconnect()
+            runCatching { conn?.disconnect() }
+            if (activeConnection === conn) activeConnection = null
         }
     }
 
