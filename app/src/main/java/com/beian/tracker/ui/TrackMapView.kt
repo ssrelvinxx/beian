@@ -126,8 +126,24 @@ fun TrackMapView(
     DisposableEffect(Unit) {
         onResume(mapView)
         onDispose {
+            // ⚠️ 这里**只能** onPause，绝不能 onDetach()。
+            //
+            // 原因：页面用 movableContentOf 保活（见 MainActivity），
+            // 切走时 Compose 只是「离开组合位置」，MapView 实例**被保留复用**，
+            // 切回来还是同一个对象。
+            //
+            // 而 osmdroid 的 onDetach() 是**销毁级**调用：它会关掉瓦片缓存 DB、
+            // 拆掉网络模块、清空线程池。调过之后这个实例就废了。
+            //
+            // 于是必然出现：切走 → onDetach() 拆掉地图
+            //              切回 → 复用这个已拆掉的实例 → 底层资源已释放
+            //              → 卡死，或原生崩溃（Kotlin 抓不到的 SIGSEGV，直接闪退）
+            //
+            // 这正是「轨迹 → 报备 → 回轨迹必闪退」的根因。
+            //
+            // 地图真正该销毁的时机是 Activity 结束、页面不再复用的时候，
+            // 那种情况下进程随之结束，不需要我们手动 detach。
             mapView.onPause()
-            mapView.onDetach()
         }
     }
 
@@ -174,31 +190,22 @@ fun TrackMapView(
         AndroidView(
             modifier = Modifier.matchParentSize(),
             factory = { 
-                // ⚠️ 让 MapView 在被触摸时禁止外层（Compose 的 verticalScroll）
-                // 拦截手势。
+                // ⚠️ 不能给 MapView 设 setOnTouchListener。
                 //
-                // 地图嵌在可滚动 Column 里，用户在图上纵向拖动时，外层会把它
-                // 当成「翻页」抢走 —— 表现就是「缩放后地图拖不动」（横向还能动，
-                // 因为页面只滚纵向）。
+                // osmdroid 的 MapView 在构造函数里就执行了
+                // `setOnTouchListener(this)`，它自己的 onTouch() 里做
+                // 全部手势识别（单指拖动、双指捏合、双击放大、长按）。
+                // 我用 setOnTouchListener 覆盖它 = 把地图的手势能力整个抽掉，
+                // 结果会是「拖不动、也缩放不了」。
                 //
-                // requestDisallowInterceptTouchEvent 是 Android 原生 View 体系里
-                // 解决这类冲突的标准做法：手指按下时禁止父容器拦截，抬起后再放开。
-                // 放在 AndroidView 的 factory 里，地图一创建就挂上。
-                mapView.setOnTouchListener { v, event ->
-                    when (event.actionMasked) {
-                        MotionEvent.ACTION_DOWN,
-                        MotionEvent.ACTION_MOVE,
-                        -> v.parent?.requestDisallowInterceptTouchEvent(true)
-                        MotionEvent.ACTION_UP,
-                        MotionEvent.ACTION_CANCEL,
-                        -> v.parent?.requestDisallowInterceptTouchEvent(false)
-                    }
-                    false // 不消费事件，仍交给 MapView 自己处理
-                }
-                mapView
+                // 正确做法：不动 MapView，包一层父容器，
+                // 由这个容器阻止 Compose 的 verticalScroll 抢手势。
+                ChildInterceptBlocker(mapView)
             },
-            update = { view ->
-                applyOfflineMode(view, offlineMode)
+            update = { _ ->
+                // 参数是外层容器（ChildInterceptBlocker），本块用不到 ——
+                // 地图操作一律用捕获的 mapView（传容器会类型不匹配）。
+                applyOfflineMode(mapView, offlineMode)
                 // 指纹：点数 + 首尾点（足够区分「没变」和「新增/切换了日期」）
                 val key = buildString {
                     append(points.size).append('|')
@@ -209,7 +216,7 @@ fun TrackMapView(
                 }
                 if (drawKey.value != key) {
                     drawKey.value = key
-                    drawTrack(view, points, startLabel, endLabel, myLocation)
+                    drawTrack(mapView, points, startLabel, endLabel, myLocation)
                 }
             },
         )
@@ -328,4 +335,44 @@ private fun drawTrack(
     }
 
     view.invalidate()
+}
+
+/**
+ * 包一层父容器，用来阻止【外层】容器抢走地图的手势。
+ *
+ * 背景：地图嵌在 Compose 的 `verticalScroll` 里。用户在图上纵向拖动时，
+ * 外层会把它当成「页面滚动」拦截掉 —— 表现是「地图拖不动」，
+ * 而横向还能动（页面只滚纵向），特别容易被误判成地图坏了。
+ *
+ * 为什么不用 `mapView.setOnTouchListener`：
+ * osmdroid 的 MapView 在构造函数里就 `setOnTouchListener(this)`，
+ * 它自己就是靠这个回调做全部手势识别的。覆盖它等于废掉地图的所有手势。
+ *
+ * 所以反过来做：**不动 MapView，只在它外面加一层**。
+ * 这层容器不拦截任何事件（onInterceptTouchEvent 永远 false），
+ * 只做一件事：把 MapView 发出的「别拦截我」请求继续往上传，
+ * 从而让 Compose 的滚动容器在手指按下的这段时间里不抢手势。
+ */
+private class ChildInterceptBlocker(
+    context: android.content.Context,
+    child: android.view.View,
+) : android.widget.FrameLayout(context) {
+
+    init {
+        isClickable = false
+        isFocusable = false
+        addView(
+            child,
+            LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT),
+        )
+    }
+
+    /** 绝不拦截：事件必须原样到达 MapView。 */
+    override fun onInterceptTouchEvent(ev: android.view.MotionEvent?): Boolean = false
+
+    /** 把子 View（MapView）的诉求继续往上传。 */
+    override fun requestDisallowInterceptTouchEvent(disallowIntercept: Boolean) {
+        super.requestDisallowInterceptTouchEvent(disallowIntercept)
+        parent?.requestDisallowInterceptTouchEvent(disallowIntercept)
+    }
 }
