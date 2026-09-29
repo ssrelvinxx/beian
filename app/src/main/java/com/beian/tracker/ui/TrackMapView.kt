@@ -102,28 +102,37 @@ fun TrackMapView(
         }
     }
 
-    DisposableEffect(myLocation) {
-        myLocation?.let {
-            mapView.overlays.add(it)
-            // onResume 之后 enableMyLocation 才会真正开始接收定位回调，
-            // 少了这一步蓝点不会出现。
-            it.onResume()
-            it.enableMyLocation()
-        }
-        onDispose {
-            myLocation?.let { ov ->
-                ov.disableMyLocation()
-                ov.onPause()
-                mapView.overlays.remove(ov)
-            }
-        }
-    }
-
+    // ⚠️ 顺序至关重要：地图的 onResume 必须**先于**定位浮层注册。
+    //
+    // 原因：定位不可用时（系统开关关着 / provider 缺失）enableMyLocation()
+    // 会抛异常。若这个 effect 排在地图 resume 之前，异常会让后面
+    // 的 effect 整个不执行 —— mapView.onResume() 被跳过，
+    // **osmdroid 就不会下载任何瓦片**，地图只剩背景色网格。
+    //
+    // 这就是那个「不开定位进 App，地图一片空白；开了定位就正常」的真根因。
+    // 把地图 resume 放前面，它就不可能被定位问题拖累。
     DisposableEffect(Unit) {
         onResume(mapView)
         onDispose {
             mapView.onPause()
             mapView.onDetach()
+        }
+    }
+
+    DisposableEffect(myLocation) {
+        myLocation?.let {
+            mapView.overlays.add(it)
+            // onResume 之后 enableMyLocation 才会真正开始接收定位回调，
+            // 少了这一步蓝点不会出现。
+            runCatching { it.onResume() }
+            runCatching { it.enableMyLocation() }
+        }
+        onDispose {
+            myLocation?.let { ov ->
+                runCatching { ov.disableMyLocation() }
+                runCatching { ov.onPause() }
+                mapView.overlays.remove(ov)
+            }
         }
     }
 

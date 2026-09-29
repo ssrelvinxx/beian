@@ -67,16 +67,31 @@ fun TrackScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     // 但地图照样该能画 —— 用 allGranted() 会让地图被「请授权」整块盖住，
     // 看着就像「有定位权限却什么都不显示」。
     var locationGranted by remember { mutableStateOf(PermissionCheck.hasAnyLocation(context)) }
+
+    /**
+     * 系统定位开关。
+     *
+     * ⚠️ 必须与「有没有权限」分开判断。权限给了但快捷开关关了，
+     * 地图组件挂上定位浮层后会取不到 provider，**整个地图被拖成空白**
+     * （只剩背景色网格，瓦片一张不下）—— 这正是之前那个
+     * 「不开定位进 App 地图就全空」的根因。
+     */
+    var systemLocationOn by remember { mutableStateOf(PermissionCheck.isSystemLocationOn(context)) }
+
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 locationGranted = PermissionCheck.hasAnyLocation(context)
+                systemLocationOn = PermissionCheck.isSystemLocationOn(context)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
+
+    // 两者都满足才挂定位浮层
+    val canUseLocation = locationGranted && systemLocationOn
 
     var stays by remember { mutableStateOf(emptyList<Stay>()) }
     LaunchedEffect(sourceId, selectedDay) {
@@ -121,12 +136,26 @@ fun TrackScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
             // 看本机数据时把自己的位置也标出来；看对方的包则不加，
             // 否则会让人以为那条轨迹是自己走的。
             showMyLocation = isLocal,
-            locationGranted = locationGranted,
+            locationGranted = canUseLocation,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(300.dp)
                 .padding(horizontal = 16.dp),
         )
+
+        // 系统定位关着 → 明确告诉用户，并给一键去开启的入口。
+        // 不说的话，地图就是一片空白，用户只会以为「坏了」。
+        if (isLocal && locationGranted && !systemLocationOn) {
+            Text(
+                text = stringResource(R.string.track_location_off),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 6.dp)
+                    .clickable { PermissionCheck.openLocationSettings(context) },
+            )
+        }
 
         Spacer(Modifier.size(12.dp))
 

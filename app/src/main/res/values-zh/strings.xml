@@ -19,6 +19,7 @@
     <string name="home_network">网络</string>
 
     <string name="track_title">实时轨迹</string>
+    <string name="track_location_off">系统定位已关闭，地图无法显示。点此开启</string>
     <string name="track_start">开始记录</string>
     <string name="track_stop">停止记录</string>
     <string name="track_active">正在记录</string>
@@ -53,7 +54,7 @@
 
     <string name="settings_title">设置</string>
     <string name="settings_map">地图</string>
-    <string name="settings_map_desc">使用 OpenStreetMap 瓦片（osmdroid），无需申请 Key。</string>
+    <string name="settings_map_desc">使用高德瓦片（中文地名，国内可直连），无需申请 Key。</string>
     <string name="settings_permissions">权限</string>
     <string name="settings_perm_location">定位权限</string>
     <string name="settings_perm_usage">使用情况访问</string>
@@ -136,9 +137,10 @@
     <string name="map_offline_cancel">取消</string>
     <string name="map_offline_only">只用离线地图</string>
     <string name="map_offline_only_desc">开启后不发任何地图网络请求，没缓存的区域会留空白</string>
-    <string name="map_offline_tip">提示：地图瓦片来自 OpenStreetMap，下载个几百张够个人使用，请勿大批量抓取。已缓存的区域即使断网也能正常显示。</string>
+    <string name="map_offline_tip">提示：瓦片来自高德公开栅格服务，下载个几百张够个人使用，请勿大批量抓取。已缓存的区域即使断网也能正常显示。</string>
     <string name="map_offline_progress">%1$d/%2$d（%3$d%%）</string>
     <string name="map_offline_failed"> · 失败 %1$d</string>
+    <string name="map_offline_err">（%1$s）</string>
     <string name="settings_bg_title">后台常驻</string>
     <string name="settings_bg_running">采集服务状态</string>
     <string name="settings_bg_running_on">后台正在记录</string>

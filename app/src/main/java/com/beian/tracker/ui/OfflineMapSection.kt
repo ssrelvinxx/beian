@@ -143,7 +143,12 @@ fun OfflineMapSection(vm: MainViewModel, modifier: Modifier = Modifier) {
                                 p.total,
                                 p.percent,
                             ) + if (p.failed > 0) {
-                                stringResource(R.string.map_offline_failed, p.failed)
+                                stringResource(R.string.map_offline_failed, p.failed) +
+                                    // 带上失败原因（HTTP 状态码/异常名），
+                                    // 否则「全失败」时只能瞎猜。
+                                    (p.lastError?.let {
+                                        stringResource(R.string.map_offline_err, it)
+                                    } ?: "")
                             } else {
                                 ""
                             },

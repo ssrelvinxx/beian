@@ -47,6 +47,14 @@ object TileDownloader {
         val done: Int,
         val total: Int,
         val failed: Int,
+        /**
+         * 最近一次失败的原因（HTTP 状态码 / 异常类型）。
+         *
+         * ⚠️ 这个字段是被逼出来的：早先 [fetch] 把**所有异常都吞掉**只返回 false，
+         * 结果「9/9 全失败」时完全看不出为什么 —— 是 403 被拦？DNS 不通？
+         * 超时？只能靠猜。失败必须留下可读的线索。
+         */
+        val lastError: String? = null,
     ) {
         val percent: Int get() = if (total <= 0) 0 else done * 100 / total
         val finished: Boolean get() = done >= total
@@ -100,6 +108,7 @@ object TileDownloader {
     ): Job = scope.launch {
         var done = 0
         var failed = 0
+        var lastErr: String? = null
         onProgress(Progress(0, tiles.size, 0))
 
         for ((z, x, y) in tiles) {
@@ -108,20 +117,23 @@ object TileDownloader {
             if (dest.exists() && dest.length() > 0) {
                 // 已有缓存，跳过
                 done++
-                onProgress(Progress(done, tiles.size, failed))
+                onProgress(Progress(done, tiles.size, failed, lastErr))
                 continue
             }
-            val ok = fetch(cacheDir, z, x, y)
+            val err = fetch(cacheDir, z, x, y)
             done++
-            if (!ok) failed++
-            onProgress(Progress(done, tiles.size, failed))
+            if (err != null) {
+                failed++
+                lastErr = err
+            }
+            onProgress(Progress(done, tiles.size, failed, lastErr))
             delay(THROTTLE_MS)
         }
     }
 
     /** 直接下载单个瓦片（供 osmdroid 缓存未命中时补抓）。 */
     suspend fun fetchOne(cacheDir: File, z: Int, x: Int, y: Int): Boolean =
-        withContext(Dispatchers.IO) { fetch(cacheDir, z, x, y) }
+        withContext(Dispatchers.IO) { fetch(cacheDir, z, x, y) == null }
 
     // ── 内部 ─────────────────────────────────────────────────────────────────
 
@@ -133,7 +145,16 @@ object TileDownloader {
         return File(dir, "$y.png")
     }
 
-    private fun fetch(cacheDir: File, z: Int, x: Int, y: Int): Boolean {
+    /**
+     * 抓一个瓦片。
+     *
+     * @return null 表示成功；否则返回**可读的失败原因**
+     *   （如 `HTTP 403` / `SocketTimeoutException` / `UnknownHostException`）。
+     *
+     * ⚠️ 早先这里吞掉所有异常只返回 false，「9/9 全失败」时完全无法定位。
+     * 失败的**原因**和失败本身一样重要，必须带出来。
+     */
+    private fun fetch(cacheDir: File, z: Int, x: Int, y: Int): String? {
         var conn: HttpURLConnection? = null
         return try {
             // 复用 AmapTileSource 的 URL 构造：预下载写盘的瓦片必须和
@@ -145,15 +166,16 @@ object TileDownloader {
                 readTimeout = 15_000
                 setRequestProperty("User-Agent", USER_AGENT)
             }
-            if (conn.responseCode != 200) return false
+            val code = conn.responseCode
+            if (code != 200) return "HTTP $code"
 
             val dest = tileFile(cacheDir, z, x, y)
             conn.inputStream.use { input ->
                 dest.outputStream().use { output -> input.copyTo(output) }
             }
-            dest.length() > 0
-        } catch (_: Exception) {
-            false
+            if (dest.length() > 0) null else "空文件"
+        } catch (e: Exception) {
+            e::class.java.simpleName
         } finally {
             conn?.disconnect()
         }

@@ -5,6 +5,7 @@ import android.app.AppOpsManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.location.LocationManager
 import android.net.Uri
 import android.os.Build
 import android.os.Process
@@ -53,6 +54,56 @@ object PermissionCheck {
     fun hasAnyLocation(context: Context): Boolean =
         granted(context, Manifest.permission.ACCESS_FINE_LOCATION) ||
             granted(context, Manifest.permission.ACCESS_COARSE_LOCATION)
+
+    /**
+     * **系统定位开关**是否打开（全局定位 / 快捷开关里那个）。
+     *
+     * ⚠️ 这跟「有没有定位权限」是**两件独立的事**。权限给了、但用户在快捷开关里
+     * 把定位关了，同样一个位置也取不到。
+     *
+     * 这个区分非常关键：地图页如果不看这个开关、只凭「有权限」就挂上定位浮层，
+     * osmdroid 的 [GpsMyLocationProvider] 会拿不到任何 provider，
+     * 结果**整个地图组件被拖成空白**（只剩背景色网格，瓦片一张都不下）。
+     * 表现就是「地图一片空白」，而用户其实只是没开定位 —— 极难联想。
+     *
+     * 所以凡是「要用定位」的地方（地图浮层、采集服务），
+     * 都必须 权限 + 系统开关 **两个都满足** 才继续。
+     */
+    fun isSystemLocationOn(context: Context): Boolean =
+        try {
+            val lm = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
+            if (lm == null) {
+                false
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                lm.isLocationEnabled
+            } else {
+                lm.isProviderEnabled(LocationManager.GPS_PROVIDER) ||
+                    lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+            }
+        } catch (_: Exception) {
+            // 部分定制系统上可能抛异常，保守当作「没开」，
+            // 让界面给出引导，而不是让地图静默变空白。
+            false
+        }
+
+    /**
+     * 跳转到系统定位设置页。
+     *
+     * 不同 ROM 的入口名不一样，先试标准入口，失败退回定位来源选择页
+     * （那个页面几乎所有 ROM 都有，且自带总开关）。
+     */
+    fun openLocationSettings(context: Context) {
+        val candidates = listOf(
+            Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS),
+            Intent("android.settings.LOCATION_SOURCE_SETTINGS"),
+        )
+        for (intent in candidates) {
+            val ok = runCatching {
+                context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            }.isSuccess
+            if (ok) return
+        }
+    }
 
     /**
      * 息屏后仍要记录所需的后台定位权限。

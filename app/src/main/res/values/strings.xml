@@ -19,6 +19,7 @@
     <string name="home_network">Network</string>
 
     <string name="track_title">Live Track</string>
+    <string name="track_location_off">Location is off, so the map can\'t render. Tap to enable.</string>
     <string name="track_start">Start tracking</string>
     <string name="track_stop">Stop tracking</string>
     <string name="track_active">Tracking active</string>
@@ -53,7 +54,7 @@
 
     <string name="settings_title">Settings</string>
     <string name="settings_map">Map</string>
-    <string name="settings_map_desc">Uses OpenStreetMap tiles (osmdroid). No API key needed.</string>
+    <string name="settings_map_desc">Uses Amap tiles (Chinese labels, reachable in mainland China). No API key needed.</string>
     <string name="settings_permissions">Permissions</string>
     <string name="settings_perm_location">Location</string>
     <string name="settings_perm_usage">Usage access</string>
@@ -136,9 +137,10 @@
     <string name="map_offline_cancel">Cancel</string>
     <string name="map_offline_only">Offline map only</string>
     <string name="map_offline_only_desc">No map network requests. Uncached areas stay blank.</string>
-    <string name="map_offline_tip">Tiles come from OpenStreetMap. A few hundred per person is fine — please do not bulk-scrape. Cached areas work without network.</string>
+    <string name="map_offline_tip">Tiles come from Amap\'s public raster service. A few hundred per person is fine — please do not bulk-scrape. Cached areas work without network.</string>
     <string name="map_offline_progress">%1$d/%2$d (%3$d%%)</string>
     <string name="map_offline_failed"> · %1$d failed</string>
+    <string name="map_offline_err"> (%1$s)</string>
     <string name="settings_bg_title">Keep running in background</string>
     <string name="settings_bg_running">Service status</string>
     <string name="settings_bg_running_on">Recording in background</string>
