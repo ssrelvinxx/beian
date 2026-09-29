@@ -15,7 +15,6 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -48,23 +47,16 @@ fun OfflineMapSection(vm: MainViewModel, modifier: Modifier = Modifier) {
     LaunchedEffect(sourceId, day) { vm.refreshTileStats() }
 
     /**
-     * ⚠️ 离开这一页时必须停掉瓦片下载。
+     * ⚠️ 关于取消下载的时机 —— 这里**不再是**离开页面的时机。
      *
-     * 下载任务挂在 viewModelScope 上，而 MainViewModel 是 **Activity 作用域**
-     * （`viewModel()`），Tab 切换不会销毁它 —— 切走之后下载仍在后台猛跑，
-     * 每张瓦片都回写一次 _downloadProgress（StateFlow）。
+     * 页面现在用 movableContentOf 保住状态（切 Tab 不销毁），
+     * 所以 onDispose 只在 Activity 真正销毁时才触发，
+     * 拿它当「切走就停下载」用会失效。
      *
-     * 而 MainScreen 用的是 `when (index) { ... }` 直接切换，切走时
-     * TrackScreen / 本组件**整个销毁**。于是形成：
-     *   旧组合正在销毁 + 新组合正在建立 + 后台每几十毫秒推一次状态
-     * → 重组风暴，界面卡死。这就是「下载瓦片时切页面卡死」的成因。
-     *
-     * 所以本页销毁即取消下载。用户要看进度就留在这一页；
-     * 真要后台下载应该走前台服务，而不是靠一个已销毁的界面。
+     * 切 Tab 时取消下载的动作放在 MainScreen 里（点 tab 的那一刻），
+     * 那里才是可靠的切页信号。
      */
-    DisposableEffect(Unit) {
-        onDispose { vm.cancelTileDownload() }
-    }
+
 
     val estimate = vm.estimateTiles(zoom)
     val overLimit = estimate > TileDownloader.MAX_TILES

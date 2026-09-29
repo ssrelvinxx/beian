@@ -20,6 +20,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.movableContentOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -60,6 +61,32 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
     )
     var index by remember { mutableIntStateOf(0) }
 
+    /**
+     * ⚠️ 用 movableContentOf 保住各页面的组合状态，切 Tab 时**不销毁重建**。
+     *
+     * 原来这里是 `when (index) { 0 -> ReportScreen(...) ... }`：
+     * 每次切页，旧页面**整棵子树**被移除、新页面从零重建。后果很重：
+     *
+     *   1. TrackScreen 的 `remember { MapView(context) }` 被丢弃并重新构造。
+     *      osmdroid 的 MapView 构造极贵（tile provider、线程池、
+     *      SQLite 缓存、网络模块），而 onDispose 里还会先 onDetach()。
+     *      切一次 Tab = 销毁一个地图 + 新建一个地图。
+     *   2. 20 个 `stateIn(WhileSubscribed(5_000))` 全部退订再重订，
+     *      每次都重新查数据库。
+     *   3. 各页 LaunchedEffect 重跑（staysOfDay 会重算当天全部点位）。
+     *   4. 这一切还和采集线程（每 60 秒写库）叠在一起。
+     *
+     * 合起来就是「采集时来回切 UI 页卡顿」—— 不是某一处的锅，是结构问题。
+     *
+     * movableContentOf 让内容在离开组合位置时**保留状态**，切回来直接复用，
+     * 地图不会被重建、Flow 不会退订。这是 Compose 官方给 tab 场景的解法。
+     */
+    val reportContent = remember { movableContentOf<Modifier> { ReportScreen(vm, it) } }
+    val trackContent = remember { movableContentOf<Modifier> { TrackScreen(vm, it) } }
+    val historyContent = remember { movableContentOf<Modifier> { HistoryScreen(vm, it) } }
+    val backupContent = remember { movableContentOf<Modifier> { BackupScreen(vm, it) } }
+    val settingsContent = remember { movableContentOf<Modifier> { SettingsScreen(vm, it) } }
+
     // 启动时静默检查一次更新：只有发现新版本才会弹窗提示
     val autoCheck by vm.autoCheckUpdate.collectAsStateWithLifecycle()
     LaunchedEffect(autoCheck) {
@@ -93,7 +120,18 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
                 tabs.forEachIndexed { i, tab ->
                     NavigationBarItem(
                         selected = index == i,
-                        onClick = { index = i },
+                        onClick = {
+                            // ⚠️ 切页时停掉瓦片下载。
+                            //
+                            // 下载挂在 viewModelScope（Activity 作用域），
+                            // 不会随页面销毁而停止；而页面现在又被
+                            // movableContentOf 保活，onDispose 也指望不上。
+                            // 所以在这里 —— 用户真正点下另一个 tab 的那一刻 ——
+                            // 主动取消，避免后台继续刷 _downloadProgress
+                            // 触发跨页面重组（那正是「下载时切页面卡死」的成因）。
+                            if (i != index) vm.cancelTileDownload()
+                            index = i
+                        },
                         icon = { Icon(tab.icon, contentDescription = null) },
                         label = { Text(stringResource(tab.labelRes)) },
                     )
@@ -102,12 +140,14 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
         },
     ) { padding ->
         val modifier = Modifier.padding(padding)
+        // 只组合当前选中的那一页；其余页面的内容由 movableContentOf 保存着，
+        // 不会被销毁，切回来时状态（含 MapView）原样复用。
         when (index) {
-            0 -> ReportScreen(vm, modifier)
-            1 -> TrackScreen(vm, modifier)
-            2 -> HistoryScreen(vm, modifier)
-            3 -> BackupScreen(vm, modifier)
-            else -> SettingsScreen(vm, modifier)
+            0 -> reportContent(modifier)
+            1 -> trackContent(modifier)
+            2 -> historyContent(modifier)
+            3 -> backupContent(modifier)
+            else -> settingsContent(modifier)
         }
     }
 
