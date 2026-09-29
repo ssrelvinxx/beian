@@ -105,6 +105,10 @@ fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         // ── 检查更新 ──────────────────────────────────────────────────────────
         UpdateSection(vm)
 
+        // ── 崩溃日志 ──────────────────────────────────────────────────────────
+        // 放设置页最下面：平时不用看，出问题时才来找。
+        CrashLogSection()
+
         // ── 关于 ──────────────────────────────────────────────────────────────
         Text(
             text = stringResource(R.string.settings_about, com.beian.tracker.BuildConfig.VERSION_NAME),

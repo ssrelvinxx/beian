@@ -263,12 +263,26 @@ object UsageStatsReader {
      * 读取今日 App 前台片段（打开时间 + 时长），按打开时间升序。
      * 仍在使用中的片段 endAt = 0，durationMs 截止到当前。
      */
-    fun todaySessions(context: Context): List<AppSessionStat> {
+    fun todaySessions(context: Context): List<AppSessionStat> =
+        sessionsBetween(context, TimeUtil.startOfToday(), System.currentTimeMillis())
+
+    /**
+     * 读取任意区间的 App 前台片段。
+     *
+     * [todaySessions] 只是它的一个特例（区间 = 今天）。抽出来是为了
+     * **回填历史**：柱状图的数据源是 app_session 表，而采集每轮只写
+     * 「今天」这一天的片段 —— 历史的天里面永远是空的。
+     * 系统的 UsageEvents 会保留最近 7~14 天，可以按天回填。
+     *
+     * ⚠️ 区间不要开太宽：内部是 queryEvents 全量遍历，
+     * 一天上千条事件，一次查 7 天要遍历上万条。
+     * 回填时按天分别调用，而不是一次给 7 天的区间。
+     */
+    fun sessionsBetween(context: Context, start: Long, end: Long): List<AppSessionStat> {
         if (!hasPermission(context)) return emptyList()
+        if (start >= end) return emptyList()
 
         val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
-        val start = TimeUtil.startOfToday()
-        val end = System.currentTimeMillis()
 
         val events = usm.queryEvents(start, end) ?: return emptyList()
         val event = UsageEvents.Event()

@@ -2,6 +2,7 @@ package com.beian.tracker.data
 
 import android.content.Context
 import android.location.Location
+import android.util.Log
 import com.beian.tracker.util.AppEventDeriver
 import com.beian.tracker.util.BackupCodec
 import com.beian.tracker.util.DeviceInfo
@@ -161,6 +162,23 @@ class TrackRepository(private val context: Context) {
                 synchronized(backfillLock) { usageBackfilled = false }
                 return
             }
+        // ⚠️ 这两步必须**互相独立**，不能因为前一步为空就跳过后一步。
+        //
+        // 它们是两张表、两条取数路径，覆盖的失败模式不同：
+        //   · app_usage   走 queryUsageStats（聚合），个别 ROM 返回空
+        //   · app_session 走 queryEvents（原始事件），通常是能拿到的
+        // 之前把「聚合为空就 return」放在片段回填之前，结果一个 ROM
+        // 差异就能让柱状图永远补不上。
+        runCatching { backfillUsageTable(days) }
+            .onFailure { Log.w("TrackRepository", "backfill usage table failed", it) }
+
+        runCatching { backfillSessions(days) }
+            .onFailure { Log.w("TrackRepository", "backfill sessions failed", it) }
+    }
+
+    /** 回填 app_usage（各 App 当日总时长）。 */
+    private suspend fun backfillUsageTable(days: Int) {
+        val byDay = UsageStatsReader.dailyPerApp(context, days)
         if (byDay.isEmpty()) return
 
         byDay.forEach { (day, list) ->
@@ -176,6 +194,52 @@ class TrackRepository(private val context: Context) {
                         usageMs = it.usageMs,
                         launchCount = it.launchCount,
                         lastUsed = it.lastUsed,
+                    )
+                },
+            )
+        }
+    }
+
+    /**
+     * 按天回填前台片段（app_session）。
+     *
+     * 与 [backfillDailyUsage] 分开成两个函数，是因为两者失败的
+     * 影响面不同：时长表失败只影响排行列表，片段表失败只影响柱状图
+     * 和时间线。分开写，一处出错不至于把另一处也连累掉。
+     */
+    private suspend fun backfillSessions(days: Int) {
+        for (i in 0 until days) {
+            val dayStart = TimeUtil.startOfDay(i)
+            // 今天只查到当前时刻；历史的天查整天。
+            val dayEnd = if (i == 0) System.currentTimeMillis() else TimeUtil.endOfDay(i)
+            if (dayStart >= dayEnd) continue
+
+            val day = TimeUtil.dayKey(dayStart)
+            val sessions = runCatching {
+                UsageStatsReader.sessionsBetween(context, dayStart, dayEnd)
+            }.getOrNull().orEmpty()
+            if (sessions.isEmpty()) continue
+
+            // 已有片段的当天：不要覆盖。当天数据由采集路径实时维护，
+            // 回填只补「历史上完全空白」的那些天。
+            // 否则每次启动都会把用户当天已累积的片段重写一遍，
+            // 而且回填的区间是「整天」，会把采集写入的更细粒度结果盖掉。
+            val existing = appSessionDao.getByDay(LOCAL_SOURCE, day)
+            if (existing.isNotEmpty()) continue
+
+            appSessionDao.insertAll(
+                sessions.map {
+                    AppSession(
+                        // id 含 sourceId + startAt + packageName，
+                        // 天然唯一，重复插入会被 REPLACE 掉，不会翻倍。
+                        id = "${LOCAL_SOURCE}:${it.startAt}:${it.packageName}",
+                        sourceId = LOCAL_SOURCE,
+                        dayKey = day,
+                        packageName = it.packageName,
+                        appLabel = it.appLabel,
+                        startAt = it.startAt,
+                        endAt = it.endAt,
+                        durationMs = it.durationMs,
                     )
                 },
             )

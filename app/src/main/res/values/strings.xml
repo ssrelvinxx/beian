@@ -183,4 +183,14 @@ App usage and device stats are collected on a fixed cycle, independent of this s
     <string name="report_perm_go_settings">Open settings</string>
     <string name="report_app_usage_more">Show %1$d more</string>
     <string name="report_app_usage_less">Show less</string>
+
+    <string name="crash_title">Crash log</string>
+    <string name="crash_desc">Records the scene automatically when the app exits abnormally. Check and share it if you hit a crash.</string>
+    <string name="crash_none">No crash records</string>
+    <string name="crash_count">%1$d record(s)</string>
+    <string name="crash_view">View</string>
+    <string name="crash_share">Share</string>
+    <string name="crash_clear">Clear</string>
+    <string name="crash_cleared">Cleared</string>
+    <string name="crash_confirm_clear">Clear all crash logs?</string>
 </resources>

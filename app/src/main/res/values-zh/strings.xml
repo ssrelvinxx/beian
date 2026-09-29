@@ -182,4 +182,14 @@ App 使用统计与设备状态按固定周期采集，不受这里影响。</st
     <string name="report_perm_go_settings">去设置</string>
     <string name="report_app_usage_more">展开其余 %1$d 个</string>
     <string name="report_app_usage_less">收起</string>
+
+    <string name="crash_title">崩溃日志</string>
+    <string name="crash_desc">App 异常退出时自动记录现场。遇到闪退可以在这里查看并分享。</string>
+    <string name="crash_none">暂无崩溃记录</string>
+    <string name="crash_count">共 %1$d 条记录</string>
+    <string name="crash_view">查看</string>
+    <string name="crash_share">分享</string>
+    <string name="crash_clear">清空</string>
+    <string name="crash_cleared">已清空</string>
+    <string name="crash_confirm_clear">确定清空全部崩溃日志？</string>
 </resources>
