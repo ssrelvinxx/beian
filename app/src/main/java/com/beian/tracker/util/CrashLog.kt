@@ -158,11 +158,14 @@ object CrashLog {
         return sb.toString()
     }
 
-    /** 读全部崩溃日志（最新的在前），供设置页展示。 */
+    /** 读全部日志（崩溃 + 主线程卡顿，最新的在前），供设置页展示。 */
     fun readAll(context: Context): List<File> {
         val dir = File(context.filesDir, DIR_NAME)
         if (!dir.exists()) return emptyList()
-        return dir.listFiles { f -> f.isFile && f.name.endsWith(".txt") }
+        return dir.listFiles { f ->
+            // 两类都收：crash-*.txt（异常/进程退出）、anr-*.txt（主线程卡顿）
+            f.isFile && f.name.endsWith(".txt")
+        }
             ?.sortedByDescending { it.lastModified() }
             ?: emptyList()
     }

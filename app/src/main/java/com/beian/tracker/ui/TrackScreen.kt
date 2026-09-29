@@ -43,6 +43,8 @@ import com.beian.tracker.data.LOCAL_SOURCE
 import com.beian.tracker.data.Stay
 import com.beian.tracker.util.PermissionCheck
 import com.beian.tracker.util.TimeUtil
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * 轨迹页：地图回放 + 日期切换 + 停留点统计 + 时间轴。
@@ -95,11 +97,29 @@ fun TrackScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
 
     var stays by remember { mutableStateOf(emptyList<Stay>()) }
     LaunchedEffect(sourceId, selectedDay) {
-        stays = vm.staysOfDay(sourceId, selectedDay)
+        // ⚠️ 必须在 IO 上算，不能留在 Main。
+        //
+        // LaunchedEffect 默认跑在主线程；staysOfDay 里 Room 的 suspend
+        // 查询内部会切 IO，但**查询返回之后**那段「遍历全部点位、
+        // 逐点调 Location.distanceBetween」的判断跑在调用者线程上 ——
+        // 也就是主线程。一天上千个点时，这段循环能占住主线程几十到
+        // 几百毫秒；它和采集写库、地图重绘叠在一起时，
+        // 就是「点一下底栏卡住不动」的来源（ANR 日志里那条
+        // Input dispatching timed out 等 5 秒）。
+        stays = withContext(Dispatchers.IO) {
+            vm.staysOfDay(sourceId, selectedDay)
+        }
     }
 
-    val distance = vm.totalDistance(points)
-    val stayDuration = stays.sumOf { it.durationMs }
+    // 距离同理：原先直接写在组合体里，每次重组都要把所有点位重算一遍。
+    // 用 derivedStateOf + IO 计算，只在 points 真的变化时才重算。
+    var distance by remember { mutableStateOf(0.0) }
+    LaunchedEffect(points) {
+        distance = withContext(Dispatchers.Default) {
+            vm.totalDistance(points)
+        }
+    }
+    val stayDuration = remember(stays) { stays.sumOf { it.durationMs } }
 
     Column(
         modifier = modifier

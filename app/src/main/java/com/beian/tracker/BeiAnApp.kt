@@ -1,6 +1,7 @@
 package com.beian.tracker
 
 import android.app.Application
+import com.beian.tracker.util.AnrWatchdog
 import com.beian.tracker.util.CrashLog
 import com.beian.tracker.util.MapTileStore
 
@@ -22,5 +23,13 @@ class BeiAnApp : Application() {
         // 这里从系统侧问一次，把这种情况也留下来。
         // 读过的记录会记时间戳，不会每次启动都重复写。
         runCatching { CrashLog.recordProcessExitReasons(this) }
+
+        // 主线程卡顿监控。
+        //
+        // 用户报的「闪退」实际是 ANR（输入等待 5 秒超时），
+        // 而系统的 ANR 记录不给主线程堆栈 —— 只能靠这个看门狗
+        // 在卡住的那一刻把堆栈抓下来。
+        // 阈值 1.5 秒、连续两次超时才记，避免把 GC 抖动误报成卡顿。
+        AnrWatchdog.start(this)
     }
 }

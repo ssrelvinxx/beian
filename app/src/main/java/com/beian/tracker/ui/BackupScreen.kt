@@ -35,6 +35,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.beian.tracker.R
 import com.beian.tracker.util.TimeUtil
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * 数据互通页：
@@ -84,7 +86,15 @@ fun BackupScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         pendingImportUri = uri
         nicknameForImport = ""
         // 读一下文件，把对方导出时填的昵称预填进输入框 —— 不用再问一遍
-        scope.launch {
+        //
+        // ⚠️ 必须切到 IO。
+        //
+        // rememberCoroutineScope() 的调度器是 Dispatchers.Main.immediate，
+        // 而 openInputStream().readText() 是**同步阻塞的文件读** ——
+        // 导出包几 MB 时，这一下就把主线程占住几百毫秒到几秒。
+        // 用户看到的就是「选完文件卡住不动」（ANR 里那条
+        // Input dispatching timed out 就是这种）。
+        scope.launch(Dispatchers.IO) {
             runCatching {
                 val text = context.contentResolver.openInputStream(uri)
                     ?.bufferedReader()?.use { it.readText() }
@@ -92,7 +102,9 @@ fun BackupScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                 vm.peekImportNickname(text)
             }.onSuccess { name ->
                 // 仅在用户还没输入时填入，别覆盖正在打字的内容
-                if (nicknameForImport.isBlank()) nicknameForImport = name
+                withContext(Dispatchers.Main) {
+                    if (nicknameForImport.isBlank()) nicknameForImport = name
+                }
             }
         }
     }
@@ -336,24 +348,30 @@ fun BackupScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                         val target = uri
                         val name = nicknameForImport.trim().ifBlank { "对方" }
                         pendingImportUri = null
-                        scope.launch {
+                        // 同上：文件读 + JSON 解析都是同步重活，必须切 IO。
+                        // 导入时的包更大（含全部轨迹点），留在主线程必然 ANR。
+                        scope.launch(Dispatchers.IO) {
                             try {
                                 val text = context.contentResolver.openInputStream(target)
                                     ?.bufferedReader()
                                     ?.use { it.readText() }
                                     ?: throw IllegalArgumentException("无法读取文件")
                                 val src = vm.importBackupJson(text, name)
-                                Toast.makeText(
-                                    context,
-                                    "已导入「${src.nickname}」",
-                                    Toast.LENGTH_LONG,
-                                ).show()
+                                withContext(Dispatchers.Main) {
+                                    Toast.makeText(
+                                        context,
+                                        "已导入「${src.nickname}」",
+                                        Toast.LENGTH_LONG,
+                                    ).show()
+                                }
                             } catch (e: Exception) {
-                                Toast.makeText(
-                                    context,
-                                    "导入失败：${e.message}",
-                                    Toast.LENGTH_LONG,
-                                ).show()
+                                withContext(Dispatchers.Main) {
+                                    Toast.makeText(
+                                        context,
+                                        "导入失败：${e.message}",
+                                        Toast.LENGTH_LONG,
+                                    ).show()
+                                }
                             }
                         }
                     },
