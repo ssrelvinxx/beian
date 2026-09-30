@@ -1,6 +1,14 @@
 package com.beian.tracker.ui
 
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Typeface
+import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.Drawable
+import android.location.Location
 import android.view.MotionEvent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -10,8 +18,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -26,6 +38,7 @@ import com.beian.tracker.data.TrackPoint
 import com.beian.tracker.util.MapTileStore
 import com.beian.tracker.util.AmapTileSource
 import com.beian.tracker.util.TimeUtil
+import kotlinx.coroutines.delay
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.floor
@@ -33,6 +46,7 @@ import kotlin.math.ln
 import kotlin.math.log2
 import kotlin.math.min
 import kotlin.math.tan
+import org.osmdroid.api.IGeoPoint
 import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
@@ -59,7 +73,11 @@ fun TrackMapView(
     /**
      * 是否显示「我的位置」蓝点。
      *
-     * 只在看本机数据时显示 —— 看对方的轨迹却把自己标上去会让人误解。
+     * 本机轨迹时显示；**看对方轨迹时也显示** —— 那样才能一眼看出
+     * 「我在哪、对方在哪、差多远」。之前只在看本机时显示，
+     * 是因为怕用户误以为对方轨迹是自己走的；
+     * 现在起终点已改成明确的「起 / 终」气泡，不会再看错，
+     * 距离也由 [onDistanceToPeer] 直接算出来给用户，误读的余地更小了。
      */
     showMyLocation: Boolean = false,
     /**
@@ -71,6 +89,17 @@ fun TrackMapView(
      * 「明明给了定位权限，地图上还是没有我」。
      */
     locationGranted: Boolean = false,
+    /**
+     * 我的位置到 [points] 最后一个点的直线距离（米）。
+     *
+     * 仅在「看对方轨迹 + 我的定位可用」时回调；
+     * 其它情况回调 null，调用方据此隐藏距离那行。
+     *
+     * 用直线距离而不是「到对方轨迹的最近距离」：后者要遍历整条轨迹，
+     * 而这些点动辄上千个，在定位回调里做太重。
+     * 对「方便我看距离」这个诉求，直线距离已经够用且更直观。
+     */
+    onDistanceToPeer: ((Double?) -> Unit)? = null,
 ) {
     val context = LocalContext.current
 
@@ -82,6 +111,8 @@ fun TrackMapView(
 
     val startLabel = stringResource(R.string.map_start)
     val endLabel = stringResource(R.string.map_end)
+    val pinStart = stringResource(R.string.map_pin_start)
+    val pinEnd = stringResource(R.string.map_pin_end)
 
     val mapView = remember {
         MapView(context).apply {
@@ -112,7 +143,7 @@ fun TrackMapView(
 
     // 「我的位置」蓝点。
     //
-    // 只在看本机数据时挂上 —— 看对方轨迹却把自己标上去会误导。
+    // 本机轨迹、以及看对方轨迹时都要挂 —— 后者是为了知道「我离对方多远」。
     // 权限没给就不创建，避免 osmdroid 内部抛 SecurityException。
     val myLocation = remember(showMyLocation, locationGranted) {
         if (!showMyLocation || !locationGranted) {
@@ -121,6 +152,34 @@ fun TrackMapView(
             runCatching {
                 MyLocationNewOverlay(GpsMyLocationProvider(context), mapView)
             }.getOrNull()
+        }
+    }
+
+    // ── 我的位置 → 对方最新点的距离 ────────────────────────────────────────
+    //
+    // 通过 onDistanceToPeer 交给界面显示。没挂定位浮层 / 点位为空 → null。
+    //
+    // 用 rememberUpdatedState 取最新的 points 与回调，
+    // 避免把它们写进 effect 的 key —— 那样每来一个新点都会重启
+    // 定位浮层，蓝点会闪。
+    val latestPoints by rememberUpdatedState(points)
+    val latestOnDistance by rememberUpdatedState(onDistanceToPeer)
+
+    // ⚠️ 用轮询读 [MyLocationNewOverlay.myLocation]，而不是 runOnFirstFix：
+    //    · runOnFirstFix 只在**第一次**定位成功时触发一次，
+    //      之后走动几百米它也不会再响，距离就一直停在旧值。
+    //    · osmdroid 各版本给定位变化挂监听的方法名不一致，
+    //      硬写容易编译不过。
+    // myLocation 只是读一个已缓存的 GeoPoint，3 秒一次可以忽略不计。
+    LaunchedEffect(myLocation) {
+        val overlay = myLocation
+        if (overlay == null) {
+            latestOnDistance?.invoke(null)
+            return@LaunchedEffect
+        }
+        while (true) {
+            latestOnDistance?.invoke(distanceToLastPoint(overlay.myLocation, latestPoints))
+            delay(LOCATION_DISTANCE_INTERVAL_MS)
         }
     }
 
@@ -223,10 +282,20 @@ fun TrackMapView(
                     append('|')
                     points.lastOrNull()?.let { append(it.timestamp) }
                     append('|').append(startLabel).append(endLabel)
+                    // pin 文案跟着语言走，切语言也要重画（否则图标上还是旧文字）
+                    append('|').append(pinStart).append(pinEnd)
                 }
                 if (drawKey.value != key) {
                     drawKey.value = key
-                    drawTrack(mapView, points, startLabel, endLabel, myLocation)
+                    drawTrack(
+                        view = mapView,
+                        points = points,
+                        startLabel = startLabel,
+                        endLabel = endLabel,
+                        pinStart = pinStart,
+                        pinEnd = pinEnd,
+                        keepOverlay = myLocation,
+                    )
                 }
             },
         )
@@ -250,6 +319,25 @@ fun TrackMapView(
         }
     }
 }
+
+/** 我的位置（可为 null）到轨迹最后一点的直线距离（米）。任一侧缺失返回 null。 */
+private fun distanceToLastPoint(
+    mine: IGeoPoint?,
+    points: List<TrackPoint>,
+): Double? {
+    if (mine == null) return null
+    val last = points.lastOrNull() ?: return null
+    val out = FloatArray(1)
+    Location.distanceBetween(
+        mine.latitude, mine.longitude,
+        last.latitude, last.longitude,
+        out,
+    )
+    return out[0].toDouble()
+}
+
+/** 读「我的位置」算距离的间隔。定位本身也不是高频更新，3 秒足够。 */
+private const val LOCATION_DISTANCE_INTERVAL_MS = 3_000L
 
 /**
  * 切换在线/离线。
@@ -279,6 +367,8 @@ private fun drawTrack(
     points: List<TrackPoint>,
     startLabel: String,
     endLabel: String,
+    pinStart: String,
+    pinEnd: String,
     keepOverlay: org.osmdroid.views.overlay.Overlay? = null,
 ) {
     // ⚠️ 先关掉所有气泡，再动 overlay 列表。
@@ -335,6 +425,8 @@ private fun drawTrack(
             makeMarker(
                 view = view,
                 label = startLabel,
+                pinText = pinStart,
+                pinColor = PIN_GREEN,
                 geoPoint = geoPoints.first(),
                 timestamp = startPoint?.timestamp,
             ),
@@ -343,6 +435,8 @@ private fun drawTrack(
             makeMarker(
                 view = view,
                 label = endLabel,
+                pinText = pinEnd,
+                pinColor = PIN_RED,
                 geoPoint = geoPoints.last(),
                 timestamp = endPoint?.timestamp,
             ),
@@ -376,6 +470,11 @@ private fun drawTrack(
 /**
  * 造一个「起点/终点 + 时间」标记。
  *
+ * 图标是照着高德那种「圆圈 + 中间一个字」的气泡做的：
+ * 白底圆环 + 彩色描边 + 中间一个「起」/「终」。
+ * 用代码画而不是塞 PNG —— 一张图要适配各种 DPI，
+ * 而且这里只需要圆和字，画出来比切图更清楚也更小。
+ *
  * 时间放在 [Marker.snippet]（副标题）里 —— 这是 osmdroid 从早期版本
  * 就有的稳定公共字段，点开气泡会显示在主标题下方两行：
  *
@@ -387,13 +486,83 @@ private fun drawTrack(
 private fun makeMarker(
     view: MapView,
     label: String,
+    pinText: String,
+    pinColor: Int,
     geoPoint: GeoPoint,
     timestamp: Long?,
 ): Marker = Marker(view).apply {
     position = geoPoint
     title = label
     timestamp?.let { snippet = TimeUtil.time(it) }
-    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+    // 图标画不出来（极端 OOM 等）就别设，让 osmdroid 用默认图 ——
+    // 总比整条轨迹因为一个图标崩掉强。
+    pinIcon(view.context, pinText, pinColor)?.let { icon = it }
+    // 锚点设在圆心：圆形气泡的「所指位置」就是它的中心
+    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+}
+
+/** 气泡直径（dp）。和界面其它圆角元素量级接近，不喧宾夺主。 */
+private const val PIN_SIZE_DP = 34f
+
+/** 描边宽度（dp）。 */
+private const val PIN_STROKE_DP = 3f
+
+/** 中间那个字的字号（dp）。 */
+private const val PIN_TEXT_DP = 15f
+
+/**
+ * 画一个「白底 + 彩边 + 中间字」的圆形气泡图标。
+ *
+ * 起点用绿色、终点用红色 —— 和主流地图一致，
+ * 用户不用看图例就知道哪个是头哪个是尾。
+ *
+ * 返回 null 表示绘制失败，调用方应退回默认图标。
+ */
+private fun pinIcon(context: Context, text: String, color: Int): Drawable? = try {
+    val density = context.resources.displayMetrics.density
+    val size = (PIN_SIZE_DP * density).toInt().coerceAtLeast(1)
+    val stroke = PIN_STROKE_DP * density
+
+    val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bmp)
+
+    // 半径要扣掉半个描边，否则描边会被画布边缘切掉一半
+    val radius = size / 2f - stroke / 2f
+    val cx = size / 2f
+    val cy = size / 2f
+
+    // ① 内部白底
+    val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        this.color = Color.WHITE
+    }
+    canvas.drawCircle(cx, cy, radius, fill)
+
+    // ② 彩色描边
+    val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = stroke
+        this.color = color
+    }
+    canvas.drawCircle(cx, cy, radius, ring)
+
+    // ③ 中间的字，用同色
+    val tp = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        this.color = color
+        textSize = PIN_TEXT_DP * density
+        typeface = Typeface.DEFAULT_BOLD
+        textAlign = Paint.Align.CENTER
+    }
+    // 让文字在视觉上垂直居中：baseline 要下移 (ascent+descent)/2
+    val fm = tp.fontMetrics
+    val baseline = cy - (fm.ascent + fm.descent) / 2f
+    canvas.drawText(text, cx, baseline, tp)
+
+    BitmapDrawable(context.resources, bmp)
+} catch (_: Throwable) {
+    // 用 Throwable 而不是 Exception：Bitmap 分配失败可能抛 OOM，
+    // 那属于 Error 分支，不抓的话会直接崩。
+    null
 }
 
 /** 把地图缩放到刚好装下 [geoPoints]。 */
@@ -482,6 +651,12 @@ private const val MAX_LAT = 85.05112878
 
 /** 单张瓦片边长（osmdroid 与高德源都是 256）。 */
 private const val TILE_SIZE = 256.0
+
+/** 起点气泡色（绿）。 */
+private const val PIN_GREEN = 0xFF12B76A.toInt()
+
+/** 终点气泡色（红）。 */
+private const val PIN_RED = 0xFFE5484D.toInt()
 
 /** 缩放边距（像素），与 osmdroid 原来传的 48 保持一致。 */
 private const val FIT_BORDER_PX = 48

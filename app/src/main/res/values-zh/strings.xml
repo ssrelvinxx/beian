@@ -71,6 +71,9 @@ App 使用统计与设备状态按固定周期采集，不受这里影响。</st
     <string name="map_no_points">暂无轨迹点</string>
     <string name="map_start">起点</string>
     <string name="map_end">终点</string>
+    <string name="map_pin_start">起</string>
+    <string name="map_pin_end">终</string>
+    <string name="track_peer_distance">距对方最新位置 %1$s</string>
     <string name="notif_channel_name">轨迹记录</string>
     <string name="notif_running">正在记录您的轨迹</string>
     <string name="tab_report">报备</string>

@@ -178,18 +178,37 @@ fun TrackScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         SourceSelector(vm)
 
         // ── 地图 ──────────────────────────────────────────────────────────────
+        // 我的位置蓝点：本机和看对方时都显示。
+        // 看对方时显示是为了直观对比「我在哪、对方在哪、差多远」——
+        // 起终点现在是「起 / 终」气泡，不会再看错成自己的轨迹。
+        var peerDistance by remember { mutableStateOf<Double?>(null) }
+
         TrackMapView(
             points = points,
             offlineMode = offlineOnly,
-            // 看本机数据时把自己的位置也标出来；看对方的包则不加，
-            // 否则会让人以为那条轨迹是自己走的。
-            showMyLocation = isLocal,
+            showMyLocation = true,
             locationGranted = canUseLocation,
+            onDistanceToPeer = { peerDistance = it },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(300.dp)
                 .padding(horizontal = 16.dp),
         )
+
+        // 看对方轨迹时，把「我在哪 vs 对方最后在哪」的距离写出来。
+        // 本机轨迹不需要这行（自己到自己的轨迹没有「距离」的意义）。
+        val d = peerDistance
+        if (!isLocal && d != null) {
+            Text(
+                text = stringResource(
+                    R.string.track_peer_distance,
+                    TimeUtil.formatDistance(d),
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+            )
+        }
 
         // ── 起终点时间 ────────────────────────────────────────────────────────
         //

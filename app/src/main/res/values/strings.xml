@@ -71,6 +71,9 @@ App usage and device stats are collected on a fixed cycle, independent of this s
     <string name="map_no_points">No track points yet</string>
     <string name="map_start">Start</string>
     <string name="map_end">End</string>
+    <string name="map_pin_start">S</string>
+    <string name="map_pin_end">E</string>
+    <string name="track_peer_distance">To their latest position: %1$s</string>
     <string name="notif_channel_name">Tracking</string>
     <string name="notif_running">Recording your track</string>
     <string name="tab_report">Report</string>
