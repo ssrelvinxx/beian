@@ -28,6 +28,34 @@ interface TrackPointDao {
     @Query("SELECT MAX(timestamp) FROM track_points WHERE sourceId = :sourceId")
     suspend fun latestTimestamp(sourceId: String): Long?
 
+    /**
+     * 某天中、时间早于 [before] 的最近一个点。
+     *
+     * 采集时做**增量**距离累加用：新点只要和它的前一个点比一次就够了，
+     * 不必把当天整张表拉出来重算（见 [com.beian.tracker.data.TrackRepository.appendPoint]）。
+     *
+     * 命中 (sourceId, dayKey) 复合索引后 ORDER BY timestamp DESC LIMIT 1
+     * 是索引内的反向扫描，只读一行。
+     */
+    @Query(
+        "SELECT * FROM track_points WHERE sourceId = :sourceId AND dayKey = :day " +
+            "AND timestamp < :before ORDER BY timestamp DESC LIMIT 1",
+    )
+    suspend fun previousBefore(sourceId: String, day: String, before: Long): TrackPoint?
+
+    /**
+     * 某天中、时间晚于 [after] 的最近一个点。
+     *
+     * 和 [previousBefore] 配对使用，让增量里程的计算**与插入顺序无关**。
+     * 补点（seedLastKnownLocation 可能补一个比现有更早的点）时，
+     * 只看前一个点会漏掉「新点 → 后一个点」这一段的拆分。
+     */
+    @Query(
+        "SELECT * FROM track_points WHERE sourceId = :sourceId AND dayKey = :day " +
+            "AND timestamp > :after ORDER BY timestamp ASC LIMIT 1",
+    )
+    suspend fun nextAfter(sourceId: String, day: String, after: Long): TrackPoint?
+
     @Query("SELECT COUNT(*) FROM track_points WHERE sourceId = :sourceId AND dayKey = :day")
     suspend fun countByDay(sourceId: String, day: String): Int
 
@@ -109,6 +137,16 @@ interface DailySummaryDao {
 
     @Query("DELETE FROM daily_summary WHERE sourceId = :sourceId")
     suspend fun deleteSource(sourceId: String)
+
+    /**
+     * 删掉某一天的汇总行。
+     *
+     * 给数据清理用：某天的轨迹点被全部清空后，汇总行要一起删掉 ——
+     * 否则历史页会留着一个「里程 0、点数 0」的空壳日期，
+     * 点进去什么都没有，看着像数据损坏。
+     */
+    @Query("DELETE FROM daily_summary WHERE sourceId = :sourceId AND dayKey = :day")
+    suspend fun deleteDay(sourceId: String, day: String)
 }
 
 @Dao

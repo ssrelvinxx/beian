@@ -29,6 +29,9 @@ class SettingsStore(private val context: Context) {
     private val keyOfflineMapOnly = booleanPreferencesKey("offline_map_only")
     private val keyMapZoom = intPreferencesKey("offline_map_zoom")
 
+    // ── 数据保留 ──────────────────────────────────────────────────────────────
+    private val keyRetentionDays = intPreferencesKey("retention_days")
+
     val intervalSec: Flow<Int> = context.dataStore.data.map { it[keyInterval] ?: DEFAULT_INTERVAL }
 
     val trackingEnabled: Flow<Boolean> = context.dataStore.data.map { it[keyEnabled] ?: false }
@@ -74,6 +77,29 @@ class SettingsStore(private val context: Context) {
         context.dataStore.edit { it[keyLastUpdateCheckAt] = value }
     }
 
+    /**
+     * 本机数据的保留天数。
+     *
+     * 超过这个天数的轨迹点 / 设备快照 / App 使用记录会被自动清理
+     * （见 [com.beian.tracker.data.TrackRepository.purgeOlderThan]）。
+     *
+     * ⚠️ 只清本机数据，导入的对方数据不受影响 —— 那些由用户在
+     *    来源列表里手动删。
+     *
+     * ⚠️ 0 表示**不自动清理**（保留全部）。这是默认值：
+     *    自动删数据是不可逆的，不能替用户做主。
+     *    用户明确设了天数才会真的开始删。
+     */
+    val retentionDays: Flow<Int> = context.dataStore.data.map {
+        it[keyRetentionDays] ?: DEFAULT_RETENTION_DAYS
+    }
+
+    suspend fun setRetentionDays(value: Int) {
+        context.dataStore.edit {
+            it[keyRetentionDays] = if (value <= 0) 0 else value.coerceIn(MIN_RETENTION_DAYS, MAX_RETENTION_DAYS)
+        }
+    }
+
     suspend fun setIntervalSec(value: Int) {
         context.dataStore.edit {
             it[keyInterval] = value.coerceIn(MIN_INTERVAL, MAX_INTERVAL)
@@ -104,5 +130,22 @@ class SettingsStore(private val context: Context) {
 
         /** 预下载默认到 z16（街道级）。级别越高瓦片数增长越快。 */
         const val DEFAULT_MAP_ZOOM = 16
+
+        /**
+         * 默认保留天数。
+         *
+         * ⚠️ 0 = 不自动清理。
+         *
+         * 刻意不设成 90 之类的具体天数：自动删数据不可逆，
+         * 默认必须是「什么都不删」，由用户自己去设置里开。
+         * 否则用户更新完 App 一觉醒来，发现几个月前的轨迹没了。
+         */
+        const val DEFAULT_RETENTION_DAYS = 0
+
+        /** 可设的最小保留天数。低于 7 天几乎等于刚采完就删，没有意义。 */
+        const val MIN_RETENTION_DAYS = 7
+
+        /** 可设的最大保留天数（约 3 年）。 */
+        const val MAX_RETENTION_DAYS = 1095
     }
 }

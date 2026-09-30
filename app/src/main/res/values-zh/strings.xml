@@ -196,4 +196,13 @@ App 使用统计与设备状态按固定周期采集，不受这里影响。</st
     <string name="backup_export_save">保存到文件</string>
     <string name="backup_export_save_hint">存到手机里自己指定位置，之后再手动发送。</string>
     <string name="backup_export_done">已生成，正在打开分享…</string>
+
+    <!-- 数据保留 -->
+    <string name="settings_retention">数据保留</string>
+    <string name="settings_retention_desc">轨迹点只增不减，一天约 720 个。超过保留期的本机数据会被自动清理（导入的对方数据不受影响）。</string>
+    <string name="settings_retention_never">不清理</string>
+    <string name="settings_retention_days">%1$d 天</string>
+    <string name="settings_retention_years">%1$d 年</string>
+    <string name="settings_retention_current">当前：保留最近 %1$d 天</string>
+    <string name="settings_retention_off_hint">当前：全部保留，不做自动清理</string>
 </resources>

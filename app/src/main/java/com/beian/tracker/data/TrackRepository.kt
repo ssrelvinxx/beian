@@ -86,7 +86,91 @@ class TrackRepository(private val context: Context) {
                 provider = location.provider.orEmpty(),
             ),
         )
-        refreshSummary(LOCAL_SOURCE, day)
+        // ⚠️ 这里**不再**调 refreshSummary()。
+        //
+        // 那是 O(当天全部点) 的全表重扫：取出当天所有点，再逐对算距离。
+        // 采集间隔 120 秒 → 一天 720 次回调，第 N 次回调要遍历 N 个点，
+        // 全天累计约 26 万次 distanceBetween（每次都是浮点运算 + JNI 调用）。
+        // 而且越到晚上点越多、单次越慢，还全程占着 SQLite 读。
+        //
+        // 改成增量：新点只和它前面那一个点算一次距离，累加到已有汇总上。
+        appendPointToSummary(location, day)
+    }
+
+    /**
+     * 增量更新当天汇总：只动「新点接入后影响到的线段」。
+     *
+     * 背景：原来 [recordPoint] 每落一个点就 [refreshSummary] 全量重扫当天
+     * 所有点，累计约 26 万次 distanceBetween（见 recordPoint 注释）。
+     *
+     * ── 为什么不是「只跟上一个点算一次」 ─────────────────────────────────
+     *
+     * 那个简化版有个坑：插入顺序不保证时间递增。
+     * [com.beian.tracker.service.TrackService.seedLastKnownLocation]
+     * 会在启动时补一个**缓存位置**，它可能比库里的点都早；
+     * 网络定位与 GPS 也可能交错回调。此时「新点」插在链中间，
+     * 正确的增量是：
+     *
+     *     去掉  prev↔next  这一段
+     *     加上  prev↔new 和 new↔next 两段
+     *
+     * 只算 new↔prev 会把 next 那半段漏掉，里程少算。
+     * 首尾两种情况（没有 prev / 没有 next）退化成只加一段。
+     *
+     * ── 结果为什么和全量重算一致 ─────────────────────────────────────────
+     *
+     * 全量 = 对各相邻点对求和。增量按同一组点对做「拆一段、补两段」，
+     * 集合运算上是等价的，且每段都套同样的漂移过滤
+     * （[DRIFT_THRESHOLD_M]）—— 注意过滤是非线性的，所以**必须**
+     * 逐段判断，不能先求和再判断。
+     */
+    private suspend fun appendPointToSummary(location: Location, day: String) {
+        val prev = pointDao.previousBefore(LOCAL_SOURCE, day, location.time)
+        val next = pointDao.nextAfter(LOCAL_SOURCE, day, location.time)
+
+        // 逐段算「计入里程的距离」，漂移段返回 0。
+        fun seg(a: TrackPoint, b: TrackPoint): Double {
+            val result = FloatArray(1)
+            Location.distanceBetween(a.latitude, a.longitude, b.latitude, b.longitude, result)
+            return if (result[0] < DRIFT_THRESHOLD_M) result[0].toDouble() else 0.0
+        }
+
+        val newPoint = TrackPoint(
+            timestamp = location.time,
+            dayKey = day,
+            latitude = location.latitude,
+            longitude = location.longitude,
+        )
+
+        // 去掉旧的一段（若两侧都有点），补上新的两段。
+        val removed = if (prev != null && next != null) seg(prev, next) else 0.0
+        val added = (if (prev != null) seg(prev, newPoint) else 0.0) +
+            (if (next != null) seg(newPoint, next) else 0.0)
+
+        val old = summaryDao.getDay(LOCAL_SOURCE, day)
+        val latestSnapshot = snapshotDao.latestOf(LOCAL_SOURCE)
+        val todaySnapshot = if (latestSnapshot?.dayKey == day) latestSnapshot else null
+
+        summaryDao.upsert(
+            DailySummary(
+                sourceId = LOCAL_SOURCE,
+                dayKey = day,
+                // coerceAtLeast(0)：浮点误差 + 漂移过滤的非线性，
+                // 理论上不该为负，但兜一下避免出现负数里程。
+                totalDistanceMeters = ((old?.totalDistanceMeters ?: 0.0) - removed + added)
+                    .coerceAtLeast(0.0),
+                pointCount = (old?.pointCount ?: 0) + 1,
+                unlockCount = todaySnapshot?.unlockCount ?: old?.unlockCount ?: 0,
+                screenTimeMs = todaySnapshot?.screenTimeMs ?: old?.screenTimeMs ?: 0L,
+                // min/max 而不是直接覆盖：补一个较早的点时，
+                // firstSeen 要往前推，lastSeen 不能被它带回去。
+                firstSeen = minOf(
+                    (old?.firstSeen ?: 0L).takeIf { it > 0 } ?: location.time,
+                    location.time,
+                ),
+                lastSeen = maxOf(old?.lastSeen ?: 0L, location.time),
+            ),
+        )
     }
 
     fun pointsOfDay(sourceId: String, day: String): Flow<List<TrackPoint>> =
@@ -397,7 +481,45 @@ class TrackRepository(private val context: Context) {
         )
         if (events.isNotEmpty()) eventDao.insertAll(events)
 
-        refreshSummary(LOCAL_SOURCE, day)
+        // ⚠️ 这里**不再**调 refreshSummary()。
+        //
+        // ticker 每 60 秒跑一轮，而 refreshSummary 要取出当天全部轨迹点
+        // 逐对算距离 —— 但这一轮**根本没动过轨迹点**（点由定位回调写入，
+        // 和 ticker 是两条路径），距离、点数、首末时间全都没变。
+        // 每 60 秒重算一次纯属白费：一天 1440 次 × 当天点数，
+        // 几十万次无意义的 distanceBetween，还占着读锁和主线程外的 CPU。
+        //
+        // 本轮的快照确实会更新解锁次数 / 屏幕时长，这两个字段单独写进去即可。
+        refreshSummarySnapshotFields(LOCAL_SOURCE, day)
+    }
+
+    /**
+     * 只把「解锁次数 / 屏幕时长」同步进当天汇总，不动距离和点数。
+     *
+     * 给 [captureSnapshot] 用：那一轮只采了设备状态，轨迹点没变，
+     * 没必要重扫全部点算距离（见该处注释）。
+     *
+     * ⚠️ 汇总行不存在时回退到全量 [refreshSummary]。
+     *    否则新建出来的行会带着 distance=0 / pointCount=0，
+     *    而当天其实已经有轨迹点了 —— 界面上里程会突然显示成 0。
+     *    正常运行时汇总行早就在（首次落点时就建好了），走不到回退分支。
+     */
+    private suspend fun refreshSummarySnapshotFields(sourceId: String, day: String) {
+        val old = summaryDao.getDay(sourceId, day)
+        if (old == null) {
+            refreshSummary(sourceId, day)
+            return
+        }
+
+        val latestSnapshot = snapshotDao.latestOf(sourceId)
+        val todaySnapshot = if (latestSnapshot?.dayKey == day) latestSnapshot else null
+
+        summaryDao.upsert(
+            old.copy(
+                unlockCount = todaySnapshot?.unlockCount ?: old.unlockCount,
+                screenTimeMs = todaySnapshot?.screenTimeMs ?: old.screenTimeMs,
+            ),
+        )
     }
 
     /**
@@ -686,7 +808,7 @@ class TrackRepository(private val context: Context) {
                 Location.distanceBetween(it.latitude, it.longitude, p.latitude, p.longitude, result)
                 val d = result[0]
                 // 过滤定位漂移（单点跳变 > 2km 视为异常）
-                if (d < 2000) distance += d
+                if (d < DRIFT_THRESHOLD_M) distance += d
             }
             prev = p
         }
@@ -750,17 +872,59 @@ class TrackRepository(private val context: Context) {
         return out
     }
 
-    /** 清理 N 天前的本机数据。 */
+    /**
+     * 清理 N 天前的本机数据。
+     *
+     * ⚠️ 删完必须重算受影响日期的汇总。
+     *
+     * 原来只删点、不动 `daily_summary`，而那些天可能被清空了却没重算，
+     * 历史页就会一直挂着已经不存在的里程和点数 —— 点进详情又是空的。
+     * 汇总行是按天的，删点后要按「被清过的那些天」重算或删除。
+     */
     suspend fun purgeOlderThan(days: Int) {
+        // days <= 0 表示不清理（见 SettingsStore.DEFAULT_RETENTION_DAYS）。
+        if (days <= 0) return
+
         val cutoff = System.currentTimeMillis() - days * 24L * 3600_000
+        val cutoffDay = TimeUtil.dayKey(cutoff)
+
+        // 先记下会被波及的日期 —— 删完就查不出来了。
+        val affectedDays = (
+            pointDao.daysOfSource(LOCAL_SOURCE) +
+                snapshotDao.daysOfSource(LOCAL_SOURCE)
+            ).filter { it.isNotBlank() && it < cutoffDay }
+
         // 只清本机：导入的对方数据由用户自己决定何时删（来源列表里删）。
         pointDao.deleteOlderThan(cutoff)
         snapshotDao.deleteOlderThan(cutoff)
-        appUsageDao.deleteBeforeDay(LOCAL_SOURCE, TimeUtil.dayKey(cutoff))
-        appSessionDao.deleteBeforeDay(LOCAL_SOURCE, TimeUtil.dayKey(cutoff))
+        appUsageDao.deleteBeforeDay(LOCAL_SOURCE, cutoffDay)
+        appSessionDao.deleteBeforeDay(LOCAL_SOURCE, cutoffDay)
+
+        // 逐天重算：当天若还有残留点会算出正确值，
+        // 全被清空时 refreshSummary 会写成 0 —— 那也不对，
+        // 因为「这天没数据」应该在历史页里消失，而不是留个 0 的壳。
+        // 所以按天数重算后，把已经没有任何点的那些天从汇总里删掉。
+        for (day in affectedDays) {
+            if (pointDao.countByDay(LOCAL_SOURCE, day) == 0) {
+                summaryDao.deleteDay(LOCAL_SOURCE, day)
+            } else {
+                refreshSummary(LOCAL_SOURCE, day)
+            }
+        }
     }
 
     companion object {
+        /**
+         * 定位漂移阈值（米）。
+         *
+         * 单点跳变超过这个距离就当作 GPS 漂移，不计入里程 ——
+         * 室内/隧道口常出现几百米到几公里的瞬时跳点，算了里程会虚高。
+         *
+         * 增量累加（[appendPointToSummary]）和全量重算（[refreshSummary]）
+         * 两处都要用同一个值，否则两条路径算出的里程会对不上。
+         */
+        const val DRIFT_THRESHOLD_M = 2000f
+
         /** 停留段：两点间隔超过该值即断开。 */
         const val STAY_GAP_MS = 5 * 60_000L
 

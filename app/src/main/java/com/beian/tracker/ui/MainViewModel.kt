@@ -85,6 +85,26 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { repository.backfillDailyUsage() }
         }
+
+        // ── 自动清理过期数据 ─────────────────────────────────────────────────
+        //
+        // 轨迹点是**只增不减**的：2 分钟一个点，一天 720 个，
+        // 一年约 26 万个，导出包也跟着一起变大。
+        // [TrackRepository.purgeOlderThan] 早就写好了，但一直没有任何调用方，
+        // 等于库只进不出。
+        //
+        // ⚠️ 默认**不清理**（retentionDays = 0）。
+        //    自动删数据不可逆，不能替用户做主 —— 用户到设置里
+        //    明确设了天数才会真的开始删。见 SettingsStore 里那段说明。
+        //
+        // 放 IO 且在 App 启动时跑一次就够：清理是幂等的，
+        // 多跑几次只是多几个空查询。
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                val days = settings.retentionDays.first()
+                if (days > 0) repository.purgeOlderThan(days)
+            }
+        }
     }
 
     /** 当前查看的日期（默认今天）。 */
@@ -230,6 +250,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val myNickname: StateFlow<String> = settings.myNickname
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "")
 
+    /**
+     * 本机数据保留天数。
+     *
+     * 0 = 不自动清理（默认）。见 [com.beian.tracker.util.SettingsStore.retentionDays]。
+     */
+    val retentionDays: StateFlow<Int> = settings.retentionDays
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsStore.DEFAULT_RETENTION_DAYS)
+
     // ── 操作 ──────────────────────────────────────────────────────────────────
 
     fun selectDay(day: String) {
@@ -256,6 +284,26 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setMyNickname(name: String) {
         viewModelScope.launch { settings.setMyNickname(name) }
+    }
+
+    /**
+     * 设置保留天数，并**立即**执行一次清理。
+     *
+     * 只存设置不清理的话，用户选了「30 天」会以为马上就瘦身了，
+     * 实际要等下次冷启动 —— 中间这段时间看着像没生效。
+     *
+     * ⚠️ 清理在 IO 上跑且可能删掉大量行，不要放主线程。
+     *    days = 0（不清理）时直接跳过，不白跑一次全表扫描。
+     */
+    fun setRetentionDays(days: Int) {
+        viewModelScope.launch {
+            settings.setRetentionDays(days)
+            if (days > 0) {
+                withContext(Dispatchers.IO) {
+                    runCatching { repository.purgeOlderThan(days) }
+                }
+            }
+        }
     }
 
     // ── 导入 / 导出 ───────────────────────────────────────────────────────────

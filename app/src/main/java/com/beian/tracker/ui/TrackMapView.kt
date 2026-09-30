@@ -38,6 +38,7 @@ import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
+import org.osmdroid.views.overlay.infowindow.InfoWindow
 import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
 import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
 
@@ -280,6 +281,21 @@ private fun drawTrack(
     endLabel: String,
     keepOverlay: org.osmdroid.views.overlay.Overlay? = null,
 ) {
+    // ⚠️ 先关掉所有气泡，再动 overlay 列表。
+    //
+    // 气泡（InfoWindow）**不是 overlay 的一部分** —— 它是 osmdroid 挂在
+    // MapView 上的一个真实 View，生命周期不跟随 overlays 列表。
+    //
+    // 所以会出现：点开「终点」的气泡 → 切到一个没有轨迹点的日期 →
+    // 下面的 removeAll 把 Marker 摘掉了，**气泡却留在屏幕上**。
+    // 表现就是截图里那个矛盾画面：地图上挂着「终点 23:29:14」，
+    // 同一屏却写着「暂无轨迹点」、统计是 0 个 / 0 m。
+    //
+    // 关气泡必须用 InfoWindow 自己的静态方法（closeAllInfoWindowsOn）：
+    // 遍历 overlays 挨个 closeInfoWindow() 是**无效**的 ——
+    // 气泡已经和 Marker 失去关联，列表里也找不到它。
+    runCatching { InfoWindow.closeAllInfoWindowsOn(view) }
+
     // 不能直接 clear() —— 会把「我的位置」浮层一起清掉。
     // 只摘掉上一次画的轨迹线和起终点标记。
     //

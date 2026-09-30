@@ -197,4 +197,13 @@ App usage and device stats are collected on a fixed cycle, independent of this s
     <string name="backup_export_save">Save to file</string>
     <string name="backup_export_save_hint">Save to a location you choose, then send it later.</string>
     <string name="backup_export_done">Ready, opening share sheet…</string>
+
+    <!-- Data retention -->
+    <string name="settings_retention">Data retention</string>
+    <string name="settings_retention_desc">Track points only accumulate — about 720 a day. Local data older than the retention period is cleaned up automatically (imported data is not affected).</string>
+    <string name="settings_retention_never">Keep all</string>
+    <string name="settings_retention_days">%1$d days</string>
+    <string name="settings_retention_years">%1$d yr</string>
+    <string name="settings_retention_current">Current: keep last %1$d days</string>
+    <string name="settings_retention_off_hint">Current: keep everything, no auto cleanup</string>
 </resources>

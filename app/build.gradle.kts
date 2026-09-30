@@ -2,7 +2,6 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
-    alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
 }
 
@@ -37,6 +36,19 @@ android {
         targetSdk = 35
         versionCode = appVersionCode
         versionName = appVersionName
+
+        // ── 只打包需要的语言和密度 ────────────────────────────────────────
+        //
+        // 默认会把依赖库里所有语言的字符串全带上 —— 一个 AndroidX 库动辄
+        // 几十种语言，本项目只面向中文用户，其余全是死重量。
+        //
+        // resConfigs("zh", "en")：保留中文（主）和英文（兜底，
+        // 系统语言是英文时不会整片空白）。注意 "zh" 会一并覆盖 zh-rCN/
+        // zh-rTW 等所有中文变体。
+        //
+        // ⚠️ 本项目**没有**多语言需求，这是自用侧载 App。
+        //    将来若要支持别的语言，在这里补上语言代码即可。
+        resourceConfigurations += listOf("zh", "en")
     }
 
     signingConfigs {
@@ -51,7 +63,21 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // ── 开混淆 / 资源压缩 ────────────────────────────────────────────
+            //
+            // 之前是 false，APK 12.2MB 里一大半是没被裁掉的无用代码和资源。
+            //
+            // 安全性已逐项核实（不是凭感觉开的）：
+            //   · 全项目**零反射** —— 没有 Class.forName / getDeclaredMethod，
+            //     只有 ::class.java 这种类型引用（R8 不碰）
+            //   · 没有 @Serializable / kotlinx.serialization（依赖已移除）
+            //   · 没有 enum class
+            //   · Room 的实体和 DAO 由 KSP 生成代码访问，自带 consumer rules
+            //   · Compose / osmdroid 的 keep 规则见 proguard-rules.pro
+            //
+            // shrinkResources 依赖 minify，两者必须同时开。
+            isMinifyEnabled = true
+            isShrinkResources = true
             signingConfig = signingConfigs.getByName("shared")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
@@ -103,7 +129,6 @@ dependencies {
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
     implementation(libs.androidx.material.icons.extended)
-    implementation(libs.androidx.navigation.compose)
     debugImplementation(libs.androidx.ui.tooling)
 
     implementation(libs.androidx.room.runtime)
@@ -118,5 +143,4 @@ dependencies {
     // 系统原生 API 在高德等所有第三方地图上都验证可用。
     implementation(libs.osmdroid.android)
     implementation(libs.androidx.datastore.preferences)
-    implementation(libs.kotlinx.serialization.json)
 }
