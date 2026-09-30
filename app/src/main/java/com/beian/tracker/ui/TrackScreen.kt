@@ -38,12 +38,14 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import com.beian.tracker.R
 import com.beian.tracker.data.LOCAL_SOURCE
 import com.beian.tracker.data.Stay
 import com.beian.tracker.util.PermissionCheck
 import com.beian.tracker.util.TimeUtil
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
 /**
@@ -81,15 +83,41 @@ fun TrackScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     var systemLocationOn by remember { mutableStateOf(PermissionCheck.isSystemLocationOn(context)) }
 
     val lifecycleOwner = LocalLifecycleOwner.current
+
+    // 每次回到前台立刻重查一次。
+    //
+    // ON_START 和 ON_RESUME 都挂上：授权一定发生在离开本 App 之后，
+    // 回来时两者至少会有一个被派发（个别 ROM 只派发其中一个）。
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
+            if (event == Lifecycle.Event.ON_START || event == Lifecycle.Event.ON_RESUME) {
                 locationGranted = PermissionCheck.hasAnyLocation(context)
                 systemLocationOn = PermissionCheck.isSystemLocationOn(context)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    // ⚠️ 只有 ON_RESUME 会漏掉一条路径：**下拉快捷开关里开关定位**。
+    //
+    // 那种操作不会让 Activity 走 pause/resume，生命周期回调根本不触发 ——
+    // 用户在下拉栏把定位打开，回到 App 那条「系统定位已关闭，点此开启」
+    // 仍挂在屏幕上，看着像没生效。
+    //
+    // 所以页面可见期间做一个轻量轮询兜住它。
+    // 只在 RESUMED 状态跑（页面被切走 / App 退到后台会自动挂起），
+    // 且只在值真的变了才赋值，避免无谓重组。
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            while (true) {
+                val g = PermissionCheck.hasAnyLocation(context)
+                val s = PermissionCheck.isSystemLocationOn(context)
+                if (g != locationGranted) locationGranted = g
+                if (s != systemLocationOn) systemLocationOn = s
+                delay(2000)
+            }
+        }
     }
 
     // 两者都满足才挂定位浮层

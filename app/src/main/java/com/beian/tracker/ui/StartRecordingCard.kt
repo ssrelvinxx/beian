@@ -17,6 +17,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -27,6 +28,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.beian.tracker.R
 import com.beian.tracker.service.TrackService
@@ -59,6 +63,33 @@ fun StartRecordingCard(
 
     // 权限状态会随授权变化，用一个自增计数强制重组时重查
     var permissionRevision by remember { mutableIntStateOf(0) }
+
+    // ⚠️ 必须监听生命周期。
+    //
+    // 原来 permissionRevision 只在**卡片的按钮**被点击时才自增。
+    // 而权限有两种授予路径，只有一种会经过这里：
+    //   ① 点卡片里的按钮 → 走 requestPermissions / 跳设置 → 计数会加；
+    //   ② 用户自己去「系统设置 → 应用 → 权限」手动打开 → 不经过本组件，
+    //      计数永远不加。
+    //
+    // 于是②的情况下，回来时 remember 缓存的仍是旧值，
+    // 卡片继续显示「开始前需要先授权 / 去设置」——
+    // 用户明明已经给了权限，界面却说没给。
+    //
+    // 授权一定发生在离开本 App 之后，回来必然有 ON_RESUME，
+    // 所以在这里无条件重查一次就能覆盖。ON_START 一并加上，
+    // 成本可忽略，且能覆盖部分 ROM 不派发 resume 的情况。
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_START || event == Lifecycle.Event.ON_RESUME) {
+                permissionRevision++
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     val missingPermissions = remember(permissionRevision) {
         PermissionCheck.missing(context)
     }

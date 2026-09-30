@@ -14,6 +14,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -27,8 +28,10 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import com.beian.tracker.R
 import com.beian.tracker.util.BackgroundGuard
+import kotlinx.coroutines.delay
 
 /**
  * 「后台常驻」设置卡片。
@@ -49,15 +52,58 @@ fun BackgroundSection(modifier: Modifier = Modifier) {
     // 挂生命周期监听：从系统设置回来时重新确认一次。
     var serviceRunning by remember { mutableStateOf(BackgroundGuard.isTrackingServiceRunning(context)) }
     val lifecycleOwner = LocalLifecycleOwner.current
+
+    // 回到前台立刻重查一次。
+    //
+    // ON_START 与 ON_RESUME 都挂：去系统设置改完电池白名单回来，
+    // 两者至少有一个会被派发（个别 ROM 只派发其中一个）。
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
+            if (event == Lifecycle.Event.ON_START || event == Lifecycle.Event.ON_RESUME) {
                 serviceRunning = BackgroundGuard.isTrackingServiceRunning(context)
                 batteryOk = BackgroundGuard.isIgnoringBatteryOptimizations(context)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    // ⚠️ 只靠生命周期回调会漏掉一类变化：**在本页停留时状态被外部改变**。
+    //
+    // 例如从下拉快捷开关、其他应用的电池管理、或系统自动把服务拉起/杀掉 ——
+    // 这些都不经过本 App 的 pause/resume，回调不会响，
+    // 页面就一直显示「未放行 / 服务未运行」的旧结论。
+    //
+    // 所以可见期间做一个轻量轮询兜住它。只在 RESUMED 跑
+    // （切页 / 退后台自动挂起），且仅在值真的变了才赋值，避免无谓重组。
+    //
+    // 双频率，理由：
+    //   · 电池白名单（PowerManager，本地调用）每 2 秒查，便宜。
+    //   · 服务是否在跑必须走 ActivityManager.getRunningServices，
+    //     是跨进程 Binder 调用，2 秒一次不划算 —— 但它又**不能省**：
+    //     进程内的 TrackService.isRunning() 标记在服务被系统杀掉时
+    //     不会归 false（onDestroy 常常不执行），
+    //     也就是「标记说在跑、其实已经死了」这种情况，
+    //     恰恰只有系统查询能发现。所以放宽到 10 秒一次，
+    //     既能察觉变化，又不至于常驻占用。
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            var tick = 0
+            while (true) {
+                // 每轮都查电池白名单（本地调用）
+                val b = BackgroundGuard.isIgnoringBatteryOptimizations(context)
+                if (b != batteryOk) batteryOk = b
+
+                // 每 5 轮（约 10 秒）做一次系统级的服务运行态核对
+                if (tick % 5 == 0) {
+                    val s = BackgroundGuard.isTrackingServiceRunning(context)
+                    if (s != serviceRunning) serviceRunning = s
+                }
+
+                tick++
+                delay(2000)
+            }
+        }
     }
 
     val vendor = BackgroundGuard.vendorLabel()
