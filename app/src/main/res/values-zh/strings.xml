@@ -69,6 +69,9 @@ App 使用统计与设备状态按固定周期采集，不受这里影响。</st
     <string name="settings_grant">去授权</string>
     <string name="settings_privacy">所有数据仅保存在本机，不上传</string>
     <string name="map_no_points">暂无轨迹点</string>
+    <string name="map_refresh">刷新位置</string>
+    <string name="map_refresh_ok">已更新位置</string>
+    <string name="map_refresh_failed">暂时取不到位置，请确认系统定位已打开</string>
     <string name="map_start">起点</string>
     <string name="map_end">终点</string>
     <string name="map_pin_start">起</string>
@@ -181,7 +184,6 @@ App 使用统计与设备状态按固定周期采集，不受这里影响。</st
     <string name="report_perm_usage_desc">不开这项就没有 App 使用记录，只会记到屏幕和网络事件</string>
     <string name="report_perm_usage_skip">暂时跳过</string>
     <string name="report_perm_go_settings">去设置</string>
-    <string name="report_perm_coarse_only">当前只有「大致位置」权限，轨迹会偏差一两公里。点此改为精确位置</string>
     <string name="report_app_usage_more">展开其余 %1$d 个</string>
     <string name="report_app_usage_less">收起</string>
 

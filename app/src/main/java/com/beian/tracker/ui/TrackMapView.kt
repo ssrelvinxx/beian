@@ -14,7 +14,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -22,6 +26,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -40,6 +45,7 @@ import com.beian.tracker.util.AmapTileSource
 import com.beian.tracker.util.CoordTransform
 import com.beian.tracker.util.TimeUtil
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.floor
@@ -180,6 +186,14 @@ fun TrackMapView(
     //    · osmdroid 各版本给定位变化挂监听的方法名不一致，
     //      硬写容易编译不过。
     // myLocation 只是读一个已缓存的 GeoPoint，3 秒一次可以忽略不计。
+    //
+    // 另外这个循环还负责「拿到第一个定位时把地图移过去」：
+    // 进页面时若还没有任何轨迹点，地图停在默认位置；
+    // 一旦定位可用（[GcjGpsLocationProvider] 会立刻推一个系统缓存位置过来），
+    // 就把视野挪到那里 —— 用户一进页面就能看到自己的蓝点，
+    // 而不是对着一片空白等人猜。
+    var centeredOnFirstFix by remember(myLocation) { mutableStateOf(false) }
+
     LaunchedEffect(myLocation) {
         val overlay = myLocation
         if (overlay == null) {
@@ -187,8 +201,27 @@ fun TrackMapView(
             return@LaunchedEffect
         }
         while (true) {
-            latestOnDistance?.invoke(distanceToLastPoint(overlay.myLocation, latestPoints))
-            delay(LOCATION_DISTANCE_INTERVAL_MS)
+            val mine = overlay.myLocation
+
+            // 首次拿到定位、且当天还没有轨迹点 → 把视野移过去。
+            // 只做一次：做了标记后就不再动地图，免得跟用户拖动打架。
+            if (!centeredOnFirstFix && mine != null && latestPoints.isEmpty()) {
+                centeredOnFirstFix = true
+                runCatching {
+                    mapView.controller.setZoom(16.0)
+                    mapView.controller.setCenter(mine)
+                    mapView.invalidate()
+                }
+            }
+
+            latestOnDistance?.invoke(distanceToLastPoint(mine, latestPoints))
+
+            // 还没拿到第一个定位时用更短的间隔轮询（2Hz），
+            // 让种子位置一到就立刻居中，不用干等 3 秒。
+            delay(
+                if (!centeredOnFirstFix && latestPoints.isEmpty()) FIRST_FIX_POLL_MS
+                else LOCATION_DISTANCE_INTERVAL_MS,
+            )
         }
     }
 
@@ -309,6 +342,74 @@ fun TrackMapView(
             },
         )
 
+        // ── 手动刷新按钮 ──────────────────────────────────────────────────
+        //
+        // 使用场景：把系统定位关了又打开，然后回到本 App。
+        // 关开关时系统断掉了定位监听的注册，重新打开不会自动补回，
+        // 所以要等下一个采集间隔才可能有新回调 —— 在那之前地图上
+        // 一直是旧位置，看起来像「刷新不了」。
+        //
+        // 点这个按钮会立刻向系统要一次当前位置（见 refreshNow()），
+        // 并重新注册监听，让后续回调恢复。
+        //
+        // 只在定位可用时才显示：没有权限/没开定位时，按了也拿不到位置，
+        // 那种情况下界面已经在别处提示了缺什么，这里再放个必然失败的
+        // 按钮只会添乱。
+        if (locationGranted) {
+            val scope = rememberCoroutineScope()
+            // 刷新结果：null = 还没点过；文案用完即清，不长期占着屏幕。
+            var refreshMsg by remember { mutableStateOf<Int?>(null) }
+
+            SmallFloatingActionButton(
+                onClick = {
+                    scope.launch {
+                        val ok = runCatching { locationProvider?.refreshNow() }.getOrNull() == true
+                        refreshMsg = if (ok) {
+                            // 取到了新的位置 —— 顺手把视野移到那里。
+                            // 用户点刷新多半就是因为「看不到我在哪」，
+                            // 只更新蓝点却不动地图，等于没解决问题。
+                            myLocation?.myLocation?.let { mine ->
+                                runCatching {
+                                    mapView.controller.setZoom(16.0)
+                                    mapView.controller.setCenter(mine)
+                                    mapView.invalidate()
+                                }
+                            }
+                            R.string.map_refresh_ok
+                        } else {
+                            R.string.map_refresh_failed
+                        }
+                        delay(REFRESH_MESSAGE_MS)
+                        refreshMsg = null
+                    }
+                },
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(12.dp),
+            ) {
+                Icon(
+                    Icons.Filled.Refresh,
+                    contentDescription = stringResource(R.string.map_refresh),
+                )
+            }
+
+            refreshMsg?.let { msg ->
+                Text(
+                    text = stringResource(msg),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(top = 68.dp, end = 12.dp)
+                        .background(
+                            MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                            RoundedCornerShape(8.dp),
+                        )
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                )
+            }
+        }
+
         // 还没采到点时给一句提示，而不是留一片空白地图让人以为坏了
         if (points.isEmpty()) {
             Text(
@@ -359,6 +460,24 @@ private fun distanceToLastPoint(
 
 /** 读「我的位置」算距离的间隔。定位本身也不是高频更新，3 秒足够。 */
 private const val LOCATION_DISTANCE_INTERVAL_MS = 3_000L
+
+/**
+ * 还没拿到第一个定位时的轮询间隔（毫秒）。
+ *
+ * 进页面后要等定位可用才能把视野挪过去。这段等待用 500ms 轮询：
+ * [GcjGpsLocationProvider] 会立刻推一个系统缓存位置过来，
+ * 但那是异步的，用 3 秒的常规间隔会让蓝点/居中最多迟 3 秒才出现。
+ * 拿到首个 fix 之后就回到常规间隔，这点额外开销只在页面刚打开时存在。
+ */
+private const val FIRST_FIX_POLL_MS = 500L
+
+/**
+ * 手动刷新后提示文案的停留时间（毫秒）。
+ *
+ * 提示只需让用户确认「这次点有没有生效」，看完就该消失 ——
+ * 常驻会把地图角落长期占住，而且那个位置的信息只在点击那一刻有意义。
+ */
+private const val REFRESH_MESSAGE_MS = 2_500L
 
 /**
  * 切换在线/离线。

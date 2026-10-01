@@ -5,7 +5,6 @@ import android.net.Uri
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -102,9 +101,6 @@ fun StartRecordingCard(
         PermissionCheck.requestable().filterNot { PermissionCheck.granted(context, it) }
     }
     val allGranted = missingPermissions.isEmpty()
-    val hasFine = remember(permissionRevision) {
-        PermissionCheck.hasFineLocation(context)
-    }
     val hasBackground = remember(permissionRevision) {
         PermissionCheck.hasBackgroundLocation(context)
     }
@@ -220,21 +216,13 @@ fun StartRecordingCard(
                     Button(onClick = { startTracking() }) {
                         Text(stringResource(R.string.report_start_recording))
                     }
-                    // 只拿到「大致位置」时提醒一句：精度只有 1~3 公里，
-                    // 轨迹会明显偏差。这是可选引导，不拦着用户开始记录。
-                    if (!hasFine) {
-                        Text(
-                            text = stringResource(R.string.report_perm_coarse_only),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.clickable {
-                                // 定位权限在应用详情页里改（Android 12+ 的
-                                // 「精确/大致」开关就在那儿），不能再用弹窗申请
-                                // （系统已把该权限标记为「用户手动选择」）。
-                                openAppDetails(context)
-                            },
-                        )
-                    }
+                    // ⚠️ 这里刻意**没有**「只有大致位置，点此改精确」的引导。
+                    //
+                    // 精度由 App 自己决定，不交给用户选：申请的权限清单里
+                    // 一直是 FINE + COARSE 一起要（见 PermissionCheck.requestable），
+                    // 系统弹窗的第一个选项就是「精确位置」，用户直接选它即可。
+                    // 再叠一层「你选错了，去改成精确」的提示只会让人困惑，
+                    // 而且那个开关藏在应用详情页里，多数人找不到。
                     // 缺后台定位时**只提示、不自动跳转**。
                     //
                     // 之前这里是「点开始记录就自动拉起系统设置页」，

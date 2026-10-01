@@ -69,6 +69,9 @@ App usage and device stats are collected on a fixed cycle, independent of this s
     <string name="settings_grant">Grant</string>
     <string name="settings_privacy">All data stays on this device. Nothing is uploaded.</string>
     <string name="map_no_points">No track points yet</string>
+    <string name="map_refresh">Refresh location</string>
+    <string name="map_refresh_ok">Location updated</string>
+    <string name="map_refresh_failed">Cannot get location yet — make sure system location is on</string>
     <string name="map_start">Start</string>
     <string name="map_end">End</string>
     <string name="map_pin_start">S</string>
@@ -182,7 +185,6 @@ App usage and device stats are collected on a fixed cycle, independent of this s
     <string name="report_perm_usage_desc">App usage records need this — without it you will only see screen and network events</string>
     <string name="report_perm_usage_skip">Skip for now</string>
     <string name="report_perm_go_settings">Open settings</string>
-    <string name="report_perm_coarse_only">Only "Approximate" location is granted — the track may be off by a kilometer or two. Tap to switch to Precise.</string>
     <string name="report_app_usage_more">Show %1$d more</string>
     <string name="report_app_usage_less">Show less</string>
 
