@@ -236,6 +236,48 @@ fun BackgroundWarning(modifier: Modifier = Modifier) {
     // 每次进页面重新检测
     var ok by remember { mutableStateOf(BackgroundGuard.isIgnoringBatteryOptimizations(context)) }
 
+    // ⚠️ 必须监听生命周期重查，这是「点了去修复、要再点一次才消失」的根因。
+    //
+    // 原来的写法只在这一处重查：点击时同步调一次
+    // isIgnoringBatteryOptimizations()。但点击动作是**拉起系统对话框**，
+    // 用户此时还没点「允许」，同步查到的必然是 false ——
+    // 于是 ok 保持 false，提示条纹丝不动。
+    // 用户从系统对话框返回后，因为**没有任何生命周期监听**，
+    // 也没有别的地方会重查，提示条就一直挂着，直到用户再点一次
+    // （第二次点击时权限已经生效，才终于消失）。
+    //
+    // 这就是「首次打开 App 点去修复，要点两次才消失」。
+    //
+    // 授权一定发生在离开本 App 之后，回来必然有 ON_RESUME，
+    // 在那里重查就能一次到位。ON_START 一并加上，
+    // 覆盖部分 ROM 只派发一个的情况。
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_START || event == Lifecycle.Event.ON_RESUME) {
+                val now = BackgroundGuard.isIgnoringBatteryOptimizations(context)
+                if (now != ok) ok = now
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    // ⚠️ 只靠生命周期回调会漏掉一类情况：用户把系统对话框**取消**掉
+    // （不授权、直接返回）。那时 ON_RESUME 会响，但值仍是 false ——
+    // 这没问题。真正的问题是反过来：个别 ROM 在从对话框返回时
+    // 不派发 resume，提示条会停在旧状态。
+    // 页面可见期间做个 2 秒轮询兜住，成本可忽略（PowerManager 本地调用）。
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            while (true) {
+                val now = BackgroundGuard.isIgnoringBatteryOptimizations(context)
+                if (now != ok) ok = now
+                delay(2000)
+            }
+        }
+    }
+
     if (ok) return
 
     Row(

@@ -46,6 +46,31 @@ object PermissionCheck {
         }
     }
 
+    /**
+     * 申请时**提交给系统**的权限清单。
+     *
+     * ⚠️ 和 [required] 是两回事，别合并：
+     *
+     *   required()  → 「能不能跑起来」的判定标准，只用 COARSE，
+     *                 因为只给大致位置的用户也该能正常用。
+     *   requestable() → 「该向用户要什么」，必须把 FINE 一起要上。
+     *
+     * 之前的 bug：申请时直接用 required()，**从来没申请过精确位置**。
+     * Android 12+ 的定位弹窗里，只有当应用同时申请 FINE 和 COARSE 时
+     * 才会出现「精确 / 大致」两个选项；只申请 COARSE 等于直接替用户
+     * 选了「大致位置」，精度只有 1~3 公里 ——
+     * 这就是「地图定位不准」的另一半原因（另一半是坐标系，见 CoordTransform）。
+     *
+     * FINE 与 COARSE **必须一起提交**，否则部分 ROM 的弹窗不会给出精确选项。
+     */
+    fun requestable(): List<String> = buildList {
+        add(Manifest.permission.ACCESS_FINE_LOCATION)
+        add(Manifest.permission.ACCESS_COARSE_LOCATION)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
     /** 是否拿到了精确定位（非必需，仅用于提示质量）。 */
     fun hasFineLocation(context: Context): Boolean =
         granted(context, Manifest.permission.ACCESS_FINE_LOCATION)

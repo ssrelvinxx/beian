@@ -37,6 +37,7 @@ import com.beian.tracker.R
 import com.beian.tracker.data.TrackPoint
 import com.beian.tracker.util.MapTileStore
 import com.beian.tracker.util.AmapTileSource
+import com.beian.tracker.util.CoordTransform
 import com.beian.tracker.util.TimeUtil
 import kotlinx.coroutines.delay
 import kotlin.math.PI
@@ -53,7 +54,6 @@ import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
 import org.osmdroid.views.overlay.infowindow.InfoWindow
-import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
 import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
 
 /**
@@ -141,17 +141,26 @@ fun TrackMapView(
         onDispose { }
     }
 
-    // 「我的位置」蓝点。
+    // ── 「我的位置」蓝点 ────────────────────────────────────────────────────
     //
     // 本机轨迹、以及看对方轨迹时都要挂 —— 后者是为了知道「我离对方多远」。
     // 权限没给就不创建，避免 osmdroid 内部抛 SecurityException。
-    val myLocation = remember(showMyLocation, locationGranted) {
+    //
+    // ⚠️ 必须用 [GcjGpsLocationProvider] 而不是 osmdroid 原生的
+    //    [GpsMyLocationProvider]：底图是高德瓦片（GCJ-02），
+    //    而系统给的定位是 WGS-84，不转换蓝点会偏出 300~600 米。
+    //    详见 CoordTransform 的类注释。
+    val locationProvider = remember(showMyLocation, locationGranted) {
         if (!showMyLocation || !locationGranted) {
             null
         } else {
-            runCatching {
-                MyLocationNewOverlay(GpsMyLocationProvider(context), mapView)
-            }.getOrNull()
+            runCatching { GcjGpsLocationProvider(context) }.getOrNull()
+        }
+    }
+
+    val myLocation = remember(locationProvider) {
+        locationProvider?.let { p ->
+            runCatching { MyLocationNewOverlay(p, mapView) }.getOrNull()
         }
     }
 
@@ -320,17 +329,29 @@ fun TrackMapView(
     }
 }
 
-/** 我的位置（可为 null）到轨迹最后一点的直线距离（米）。任一侧缺失返回 null。 */
+/**
+ * 我的位置到轨迹最后一点的直线距离（米）。任一侧缺失返回 null。
+ *
+ * ⚠️ 两端都必须是**同一坐标系**。这里传进来的 [mine] 是浮层里的值，
+ * 已经被 [GcjGpsLocationProvider] 转成了 GCJ-02；
+ * 所以 [points] 也不能直接用库里的 WGS-84 值，要一起转 ——
+ * 否则两端坐标系不同，算出来的距离会平白多出几百米。
+ *
+ * 实现上把轨迹点转成 GCJ-02 再和 [mine] 比。
+ * 只转最后一个点，不是整条轨迹 —— 这个函数 3 秒调一次，
+ * 没必要为它遍历上千个点。
+ */
 private fun distanceToLastPoint(
     mine: IGeoPoint?,
     points: List<TrackPoint>,
 ): Double? {
     if (mine == null) return null
     val last = points.lastOrNull() ?: return null
+    val (lat, lon) = CoordTransform.wgs84ToGcj02(last.latitude, last.longitude)
     val out = FloatArray(1)
     Location.distanceBetween(
         mine.latitude, mine.longitude,
-        last.latitude, last.longitude,
+        lat, lon,
         out,
     )
     return out[0].toDouble()
@@ -393,7 +414,18 @@ private fun drawTrack(
     // 无意义的重组重绘），所以这里的全量重建是可接受的。
     view.overlays.removeAll { it !== keepOverlay }
 
-    val geoPoints = points.map { GeoPoint(it.latitude, it.longitude) }
+    // ⚠️ 坐标必须转成 GCJ-02 再画。
+    //
+    // 底图是高德瓦片（GCJ-02），而数据库里存的是 LocationManager 给的
+    // WGS-84 原始经纬度。两者在国内相差 300~600 米 ——
+    // 不转的话整条轨迹会飘到隔壁街区，就是用户反馈的「定位不准」。
+    //
+    // 转换只在这一层做：数据库、导出、导入一律保持 WGS-84 原始值，
+    // 理由见 CoordTransform 的类注释。
+    val geoPoints = points.map {
+        val (lat, lon) = CoordTransform.wgs84ToGcj02(it.latitude, it.longitude)
+        GeoPoint(lat, lon)
+    }
 
     if (geoPoints.size >= 2) {
         val line = Polyline().apply {
@@ -596,6 +628,9 @@ private fun fitToTrack(
         } else {
             // 还没有任何轨迹点：如果拿得到当前位置就居中过去，
             // 让人一眼看到「定位是通的」，而不是对着空白地图猜。
+            //
+            // ⚠️ 蓝点已经是 GCJ-02（由 [GcjGpsLocationProvider] 转好），
+            //    可以直接喂给地图控制器，不要再转一次。
             val mine = (keepOverlay as? MyLocationNewOverlay)?.myLocation
             if (mine != null) {
                 view.controller.setZoom(16.0)

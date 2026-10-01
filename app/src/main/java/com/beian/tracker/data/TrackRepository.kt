@@ -72,6 +72,22 @@ class TrackRepository(private val context: Context) {
     // ── 轨迹点 ────────────────────────────────────────────────────────────────
 
     suspend fun recordPoint(location: Location) {
+        // ⚠️ 丢弃精度过差的点。
+        //
+        // 只给「大致位置」权限、或基站/WiFi 定位刚建立时，系统会给出
+        // accuracy 在千米量级的点。这种点画到地图上会把轨迹整个拽偏，
+        // 还会污染「移动距离」统计（相邻两点相距一公里 → 里程虚高）。
+        //
+        // 注意：这是在**入库**处过滤，被丢弃的点不会进数据库，
+        // 所以历史脏数据不会被自动清理 —— 需要的话手动删掉那天的记录。
+        //
+        // accuracy <= 0 表示「未知精度」，不能当作差精度丢掉
+        // （部分 ROM 的 GPS 点不带 accuracy，全丢就没数据了）。
+        if (location.accuracy > 0f && location.accuracy > MAX_ACCEPTABLE_ACCURACY_M) {
+            Log.w(TAG, "skip inaccurate point: ${location.accuracy}m")
+            return
+        }
+
         val day = TimeUtil.dayKey(location.time)
         pointDao.insert(
             TrackPoint(
@@ -914,6 +930,26 @@ class TrackRepository(private val context: Context) {
     }
 
     companion object {
+        /** 日志 TAG。 */
+        private const val TAG = "TrackRepository"
+
+        /**
+         * 可接受的最差定位精度（米）。超过就丢弃该点，不入库。
+         *
+         * 取 500m 的理由：
+         *   · 只给「大致位置」权限时，系统给的点精度常在 1000~3000m 量级 ——
+         *     画到地图上会把轨迹整个拽偏，必须挡掉。
+         *   · 纯基站定位（室内、无 WiFi）常在 300~800m，这类点虽粗，
+         *     但「知道大概在哪」好过没有点，所以阈值不能压到 100m 那么严。
+         *   · 它必须明显小于 [DRIFT_THRESHOLD_M]（2000m）：
+         *     里程统计的漂移过滤是 2000m，若入库阈值比它还宽，
+         *     等于脏点先被算进里程、只是没被当成漂移而已。
+         *
+         * accuracy <= 0 表示系统没给精度信息，视为「未知」而非「很差」，
+         * 不据此丢弃（部分 ROM 的 GPS 点不带 accuracy）。
+         */
+        private const val MAX_ACCEPTABLE_ACCURACY_M = 500f
+
         /**
          * 定位漂移阈值（米）。
          *

@@ -181,6 +181,7 @@ App 使用统计与设备状态按固定周期采集，不受这里影响。</st
     <string name="report_perm_usage_desc">不开这项就没有 App 使用记录，只会记到屏幕和网络事件</string>
     <string name="report_perm_usage_skip">暂时跳过</string>
     <string name="report_perm_go_settings">去设置</string>
+    <string name="report_perm_coarse_only">当前只有「大致位置」权限，轨迹会偏差一两公里。点此改为精确位置</string>
     <string name="report_app_usage_more">展开其余 %1$d 个</string>
     <string name="report_app_usage_less">收起</string>
 

@@ -182,6 +182,7 @@ App usage and device stats are collected on a fixed cycle, independent of this s
     <string name="report_perm_usage_desc">App usage records need this — without it you will only see screen and network events</string>
     <string name="report_perm_usage_skip">Skip for now</string>
     <string name="report_perm_go_settings">Open settings</string>
+    <string name="report_perm_coarse_only">Only "Approximate" location is granted — the track may be off by a kilometer or two. Tap to switch to Precise.</string>
     <string name="report_app_usage_more">Show %1$d more</string>
     <string name="report_app_usage_less">Show less</string>
 

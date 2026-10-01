@@ -5,6 +5,7 @@ import android.net.Uri
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -20,7 +21,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -63,7 +63,6 @@ fun StartRecordingCard(
 
     // 权限状态会随授权变化，用一个自增计数强制重组时重查
     var permissionRevision by remember { mutableIntStateOf(0) }
-
     // ⚠️ 必须监听生命周期。
     //
     // 原来 permissionRevision 只在**卡片的按钮**被点击时才自增。
@@ -90,10 +89,22 @@ fun StartRecordingCard(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
+    // ⚠️ 申请用 requestable()，判定用 missing() —— 两者刻意分开。
+    //
+    // missing() 基于 required()（只要 COARSE），语义是「能不能跑起来」；
+    // 申请时必须把 FINE 也带上，否则 Android 12+ 的弹窗不会出现
+    // 「精确位置」选项，用户被默认成「大致位置」，精度只有 1~3 公里。
     val missingPermissions = remember(permissionRevision) {
         PermissionCheck.missing(context)
     }
+    // 实际拉起系统弹窗时要申请的清单（含 FINE）
+    val requestList = remember(permissionRevision) {
+        PermissionCheck.requestable().filterNot { PermissionCheck.granted(context, it) }
+    }
     val allGranted = missingPermissions.isEmpty()
+    val hasFine = remember(permissionRevision) {
+        PermissionCheck.hasFineLocation(context)
+    }
     val hasBackground = remember(permissionRevision) {
         PermissionCheck.hasBackgroundLocation(context)
     }
@@ -102,9 +113,6 @@ fun StartRecordingCard(
     val hasUsage = remember(permissionRevision) {
         PermissionCheck.hasUsageAccess(context)
     }
-
-    // 记录用户是否已经同意继续（缺后台定位时用来决定显示哪段提示）
-    var askedBackground by remember { mutableStateOf(false) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
@@ -165,8 +173,12 @@ fun StartRecordingCard(
                     )
                     Button(
                         onClick = {
-                            // 先申请普通权限（定位 + 通知）
-                            permissionLauncher.launch(missingPermissions.toTypedArray())
+                            // 申请「精确 + 大致 + 通知」全套（见 requestable() 注释）。
+                            // 缺哪项就补哪项，已授权的不用重复打扰。
+                            val toRequest = requestList
+                            if (toRequest.isNotEmpty()) {
+                                permissionLauncher.launch(toRequest.toTypedArray())
+                            }
                             permissionRevision++
                         },
                     ) {
@@ -205,31 +217,34 @@ fun StartRecordingCard(
 
                 // 权限齐全，可以开始
                 else -> {
-                    Button(
-                        onClick = {
-                            if (hasBackground || askedBackground) {
-                                startTracking()
-                            } else {
-                                // 先提示「始终允许」的重要性，再拉起系统设置。
-                                // Android 11+ 后台定位不能和前台定位一起申请，
-                                // 只能引导到应用详情页让用户手选。
-                                askedBackground = true
-                                runCatching {
-                                    context.startActivity(
-                                        Intent(
-                                            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                                            Uri.fromParts("package", context.packageName, null),
-                                        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                                    )
-                                }
-                                // 无论如何都先把采集开起来，后台定位是「更好」而非「必须」
-                                startTracking()
-                            }
-                        },
-                    ) {
+                    Button(onClick = { startTracking() }) {
                         Text(stringResource(R.string.report_start_recording))
                     }
-                    if (askedBackground && !hasBackground) {
+                    // 只拿到「大致位置」时提醒一句：精度只有 1~3 公里，
+                    // 轨迹会明显偏差。这是可选引导，不拦着用户开始记录。
+                    if (!hasFine) {
+                        Text(
+                            text = stringResource(R.string.report_perm_coarse_only),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.clickable {
+                                // 定位权限在应用详情页里改（Android 12+ 的
+                                // 「精确/大致」开关就在那儿），不能再用弹窗申请
+                                // （系统已把该权限标记为「用户手动选择」）。
+                                openAppDetails(context)
+                            },
+                        )
+                    }
+                    // 缺后台定位时**只提示、不自动跳转**。
+                    //
+                    // 之前这里是「点开始记录就自动拉起系统设置页」，
+                    // 而且因为 askedBackground 是 remember（Composable 重建即复位），
+                    // 每次冷启动后第一次点都会跳 —— 用户反馈的
+                    // 「不管给不给使用情况权限，点开始记录都跳系统设置页」就是这个。
+                    //
+                    // 自动跳转本身也很唐突：用户只是想开始记录，却被弹到系统页。
+                    // 改为常驻提示 + 手动入口：想补就点「去设置」，不想补也能正常用。
+                    if (!hasBackground) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 text = stringResource(R.string.report_perm_background_hint),
@@ -237,7 +252,7 @@ fun StartRecordingCard(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.weight(1f),
                             )
-                            TextButton(onClick = { permissionRevision++ }) {
+                            TextButton(onClick = { openAppDetails(context) }) {
                                 Text(stringResource(R.string.report_perm_go_settings))
                             }
                         }
@@ -245,5 +260,25 @@ fun StartRecordingCard(
                 }
             }
         }
+    }
+}
+
+/**
+ * 跳到本应用的「应用详情」系统页。
+ *
+ * 用它的场景：引导用户去开**后台定位**（Android 11+ 不能和前台定位一起申请，
+ * 只能让用户到应用详情页 → 权限 → 位置 → 选「始终允许」）。
+ *
+ * 跳转失败（个别 ROM 没有这个 Activity）就静默忽略 ——
+ * 这只是个可选引导，跳不过去不该影响主流程。
+ */
+private fun openAppDetails(context: android.content.Context) {
+    runCatching {
+        context.startActivity(
+            Intent(
+                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                Uri.fromParts("package", context.packageName, null),
+            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
     }
 }
