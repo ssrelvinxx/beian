@@ -413,9 +413,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val offlineMapOnly: StateFlow<Boolean> = settings.offlineMapOnly
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
-    /** 预下载的最大缩放级别。 */
-    val mapZoom: StateFlow<Int> = settings.mapZoom
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsStore.DEFAULT_MAP_ZOOM)
+    /**
+     * 离线地图预下载的缩放级别。
+     *
+     * 固定为最高级，用户不可调 —— 界面上的「下载精细度」滑块已移除。
+     * 详见 [com.beian.tracker.util.SettingsStore.mapZoom]。
+     */
+    val mapZoom: Int get() = settings.mapZoom
 
     /** 已缓存瓦片统计。 */
     private val _tileStats = MutableStateFlow(TileStats(0, 0L))
@@ -449,7 +453,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         val app = getApplication<Application>()
-        val zoom = mapZoom.value
+        val zoom = mapZoom
         val minLat = pts.minOf { it.latitude }
         val maxLat = pts.maxOf { it.latitude }
         val minLon = pts.minOf { it.longitude }
@@ -533,10 +537,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setOfflineMapOnly(value: Boolean) {
         viewModelScope.launch { settings.setOfflineMapOnly(value) }
-    }
-
-    fun setMapZoom(value: Int) {
-        viewModelScope.launch { settings.setMapZoom(value) }
     }
 
     /** 一次性提示消息（UI 消费后调用 [consumeMessage] 清空）。 */

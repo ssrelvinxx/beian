@@ -135,11 +135,6 @@ App 使用统计与设备状态按固定周期采集，不受这里影响。</st
     <string name="update_need_permission">请先允许安装未知应用</string>
     <string name="map_offline_title">离线地图</string>
     <string name="map_offline_stats">已缓存 %1$d 个瓦片 · %2$s</string>
-    <string name="map_offline_zoom">下载精细度：z%1$d（%2$s）</string>
-    <string name="map_offline_zoom_blocks">街区</string>
-    <string name="map_offline_zoom_roads">道路</string>
-    <string name="map_offline_zoom_streets">街道</string>
-    <string name="map_offline_zoom_max">极细</string>
     <string name="map_offline_estimate">按当前轨迹范围约需 %1$d 个瓦片</string>
     <string name="map_offline_over_limit">（超出上限 %1$d）</string>
     <string name="map_offline_no_points">当前日期没有轨迹点，无法估算</string>

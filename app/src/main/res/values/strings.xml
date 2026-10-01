@@ -135,11 +135,6 @@ App usage and device stats are collected on a fixed cycle, independent of this s
     <string name="update_need_permission">Please allow installing unknown apps first</string>
     <string name="map_offline_title">Offline map</string>
     <string name="map_offline_stats">Cached %1$d tiles · %2$s</string>
-    <string name="map_offline_zoom">Detail: z%1$d (%2$s)</string>
-    <string name="map_offline_zoom_blocks">blocks</string>
-    <string name="map_offline_zoom_roads">roads</string>
-    <string name="map_offline_zoom_streets">streets</string>
-    <string name="map_offline_zoom_max">very fine</string>
     <string name="map_offline_estimate">About %1$d tiles needed for the current track</string>
     <string name="map_offline_over_limit"> (over the %1$d limit)</string>
     <string name="map_offline_no_points">No track points on this date</string>

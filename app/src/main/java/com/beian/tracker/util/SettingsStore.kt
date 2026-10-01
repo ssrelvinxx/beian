@@ -27,7 +27,6 @@ class SettingsStore(private val context: Context) {
 
     // ── 离线地图 ──────────────────────────────────────────────────────────────
     private val keyOfflineMapOnly = booleanPreferencesKey("offline_map_only")
-    private val keyMapZoom = intPreferencesKey("offline_map_zoom")
 
     // ── 数据保留 ──────────────────────────────────────────────────────────────
     private val keyRetentionDays = intPreferencesKey("retention_days")
@@ -63,12 +62,24 @@ class SettingsStore(private val context: Context) {
         context.dataStore.edit { it[keyOfflineMapOnly] = value }
     }
 
-    /** 预下载的最大缩放级别。 */
-    val mapZoom: Flow<Int> = context.dataStore.data.map { it[keyMapZoom] ?: DEFAULT_MAP_ZOOM }
+    /** 预下载的缩放级别。 */
 
-    suspend fun setMapZoom(value: Int) {
-        context.dataStore.edit { it[keyMapZoom] = value.coerceIn(12, 18) }
-    }
+    /**
+     * 离线地图预下载的缩放级别。
+     *
+     * ⚠️ 固定为最高级，不再让用户设置。
+     *
+     * 原来这里是从 DataStore 读一个可调值（滑块 z12~z18）。
+     * 但「下载精细度」这个选择对用户没有意义：
+     * 调低 → 地图糊；调高 → 瓦片数按 4 倍/级增长。用户做的
+     * 其实是「猜一个刚好能下完的级别」，是纯粹的负担。
+     * 现在一律按最高级下载，能覆盖多大范围由轨迹范围决定，
+     * 界面负责把预估瓦片数如实显示出来。
+     *
+     * 用 [AmapTileSource.MAX_ZOOM] 而不是写死 18：
+     * 瓦片源的级别上限只应有一处定义，改源时不会漏掉这里。
+     */
+    val mapZoom: Int get() = AmapTileSource.MAX_ZOOM
 
     /** 上次检查更新的时间戳。 */
     val lastUpdateCheckAt: Flow<Long> = context.dataStore.data.map { it[keyLastUpdateCheckAt] ?: 0L }
@@ -127,9 +138,6 @@ class SettingsStore(private val context: Context) {
         /** 采集间隔可调范围（秒）。 */
         const val MIN_INTERVAL = 30
         const val MAX_INTERVAL = 600
-
-        /** 预下载默认到 z16（街道级）。级别越高瓦片数增长越快。 */
-        const val DEFAULT_MAP_ZOOM = 16
 
         /**
          * 默认保留天数。

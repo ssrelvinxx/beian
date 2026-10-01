@@ -11,7 +11,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -38,7 +37,6 @@ fun OfflineMapSection(vm: MainViewModel, modifier: Modifier = Modifier) {
     val stats by vm.tileStats.collectAsStateWithLifecycle()
     val progress by vm.downloadProgress.collectAsStateWithLifecycle()
     val offlineOnly by vm.offlineMapOnly.collectAsStateWithLifecycle()
-    val zoom by vm.mapZoom.collectAsStateWithLifecycle()
     val points by vm.todayPoints.collectAsStateWithLifecycle()
     val sourceId by vm.sourceId.collectAsStateWithLifecycle()
     val day by vm.selectedDay.collectAsStateWithLifecycle()
@@ -58,15 +56,15 @@ fun OfflineMapSection(vm: MainViewModel, modifier: Modifier = Modifier) {
      */
 
 
+    // 下载级别固定为最高级，不再让用户挑。
+    //
+    // 之前这里是个滑块（z12~z18），但「下载精细度」这个选择本身没有好答案：
+    // 调低 → 地图糊；调高 → 瓦片数指数增长、动辄超出单次上限下不动。
+    // 用户在这里做的其实是「猜一个刚好能下完的级别」，纯属负担。
+    // 现在一律按最高级下载，能下多少由范围决定，界面把结果如实告诉用户。
+    val zoom = vm.mapZoom
     val estimate = vm.estimateTiles(zoom)
     val overLimit = estimate > TileDownloader.MAX_TILES
-
-    val zoomLabel = when {
-        zoom <= 13 -> stringResource(R.string.map_offline_zoom_blocks)
-        zoom <= 15 -> stringResource(R.string.map_offline_zoom_roads)
-        zoom <= 17 -> stringResource(R.string.map_offline_zoom_streets)
-        else -> stringResource(R.string.map_offline_zoom_max)
-    }
 
     Card(modifier = modifier.fillMaxWidth()) {
         Column(
@@ -89,18 +87,7 @@ fun OfflineMapSection(vm: MainViewModel, modifier: Modifier = Modifier) {
 
             HorizontalDivider()
 
-            // ── 缩放级别 ──────────────────────────────────────────────────────
-            Text(
-                text = stringResource(R.string.map_offline_zoom, zoom, zoomLabel),
-                style = MaterialTheme.typography.bodySmall,
-            )
-            Slider(
-                value = zoom.toFloat(),
-                onValueChange = { vm.setMapZoom(it.toInt()) },
-                valueRange = 12f..18f,
-                steps = 5,
-                enabled = progress == null,
-            )
+            // ── 下载范围预估 ──────────────────────────────────────────────────
             Text(
                 text = if (points.isEmpty()) {
                     stringResource(R.string.map_offline_no_points)
