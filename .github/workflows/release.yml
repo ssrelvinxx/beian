@@ -103,9 +103,9 @@ jobs:
           prerelease: ${{ github.ref_type != 'tag' }}
           draft: false
 
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: huahua-apk
-          path: out/*.apk
-          if-no-files-found: error
+      # 这里**故意不再** upload-artifact。
+      #
+      # 上一步 softprops/action-gh-release 已经把同一个 APK 挂到 Release 上了，
+      # 而 Release 资产不计入存储配额；再传一份 Actions 产物纯属重复占地方
+      # （每个 ~1.7MB，release 越攒越多）。
+      # 要下载就去 Release 页面拿，那边同时还有更新日志。
