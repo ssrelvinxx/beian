@@ -143,6 +143,8 @@ App 使用统计与设备状态按固定周期采集，不受这里影响。</st
     <string name="backup_import_dialog_hint">填个昵称，方便区分不同来源</string>
     <string name="backup_import_confirm">导入</string>
     <string name="backup_cancel">取消</string>
+    <string name="backup_import_no_password">对方没设密码，直接导入</string>
+
     <string name="settings_about">花花动态 %1$s · 所有数据仅保存在本机</string>
     <string name="update_section_title">检查更新</string>
     <string name="update_current">当前版本 %1$s</string>
@@ -214,6 +216,7 @@ App 使用统计与设备状态按固定周期采集，不受这里影响。</st
     <string name="backup_export_share_hint">推荐。生成后立刻弹出分享面板，选微信等发出去即可。</string>
     <string name="backup_export_save">保存到文件</string>
     <string name="backup_export_save_hint">存到手机里自己指定位置，之后再手动发送。</string>
+<string name="backup_export_no_password_tip">已导出。还没设数据包密码，当前加密强度只够防随手一看，建议到设置里设一个</string>
     <string name="backup_export_done">已生成，正在打开分享…</string>
 
     <!-- 数据保留 -->

@@ -36,7 +36,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.beian.tracker.R
 import androidx.compose.material3.OutlinedButton
-import com.beian.tracker.util.BackupCipher
 import com.beian.tracker.util.BackupCodec
 import com.beian.tracker.util.BackupSharer
 import com.beian.tracker.util.TimeUtil
@@ -107,7 +106,14 @@ fun BackupScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                     }
                 }
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(context, "已导出", Toast.LENGTH_SHORT).show()
+                    // 没设密码时顺带提醒一句 —— 方案 B：不拦着导出，
+                    // 但要让用户知道「现在的加密强度只够防随手一看」。
+                    val tip = if (backupPassword.isEmpty()) {
+                        context.getString(R.string.backup_export_no_password_tip)
+                    } else {
+                        "已导出"
+                    }
+                    Toast.makeText(context, tip, Toast.LENGTH_LONG).show()
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
@@ -335,8 +341,12 @@ fun BackupScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                                 }
                                 Toast.makeText(
                                     context,
-                                    context.getString(R.string.backup_export_done),
-                                    Toast.LENGTH_SHORT,
+                                    if (backupPassword.isEmpty()) {
+                                        context.getString(R.string.backup_export_no_password_tip)
+                                    } else {
+                                        context.getString(R.string.backup_export_done)
+                                    },
+                                    Toast.LENGTH_LONG,
                                 ).show()
                                 BackupSharer.shareFile(context, file)
                             } catch (e: Exception) {
@@ -579,13 +589,19 @@ fun BackupScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                         // 昵称留空时用「对方」兜底 —— 导入后还能在来源列表里改。
                         val name = nicknameForImport.trim().ifBlank { "对方" }
                         val pwd = importPassword
-                        pendingImportUri = null
-                        externalText = null
-                        importPassword = ""
-                        // 同上：文件读 + 解密 + JSON 解析都是同步重活，必须切 IO。
+                        // ⚠️ 这里**不能**先关弹窗。
+                        //
+                        // 密码错了是最常见的失败（对方抄错一位、大小写弄混），
+                        // 如果失败时弹窗已经关掉，用户要重新从微信点一遍文件、
+                        // 重新读一次整包 —— 体验极差，而且他还是不知道错在哪。
+                        //
+                        // 改成：成功才关。失败保留弹窗和已输入内容，只弹提示，
+                        // 用户改一位再点一次就行。
+                        busy = true
+                        // 文件读 + 解密 + JSON 解析都是同步重活，必须切 IO。
                         // 导入时的包更大（含全部轨迹点），留在主线程必然 ANR。
                         scope.launch(Dispatchers.IO) {
-                            try {
+                            val outcome = runCatching {
                                 // 优先用已缓存的内容（外部点进来的场景），
                                 // 没有再按 Uri 读（App 内选文件的场景，
                                 // 那个 Uri 的权限是持久有效的）。
@@ -594,25 +610,33 @@ fun BackupScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                                         ?.bufferedReader()
                                         ?.use { it.readText() }
                                     ?: throw IllegalArgumentException("无法读取文件")
-                                val src = vm.importBackupJson(text, name, pwd)
-                                withContext(Dispatchers.Main) {
-                                    Toast.makeText(
-                                        context,
-                                        "已导入「${src.nickname}」",
-                                        Toast.LENGTH_LONG,
-                                    ).show()
-                                }
-                            } catch (e: Exception) {
-                                withContext(Dispatchers.Main) {
-                                    Toast.makeText(
-                                        context,
-                                        "导入失败：${e.message}",
-                                        Toast.LENGTH_LONG,
-                                    ).show()
-                                }
+                                vm.importBackupJson(text, name, pwd)
+                            }
+                            withContext(Dispatchers.Main) {
+                                busy = false
+                                outcome
+                                    .onSuccess { src ->
+                                        // 只有成功才收掉弹窗、清掉缓存的密文
+                                        pendingImportUri = null
+                                        externalText = null
+                                        importPassword = ""
+                                        Toast.makeText(
+                                            context,
+                                            "已导入「${src.nickname}」",
+                                            Toast.LENGTH_LONG,
+                                        ).show()
+                                    }
+                                    .onFailure { e ->
+                                        Toast.makeText(
+                                            context,
+                                            "导入失败：${e.message}",
+                                            Toast.LENGTH_LONG,
+                                        ).show()
+                                    }
                             }
                         }
                     },
+                    enabled = !busy,
                 ) {
                     Text(stringResource(R.string.backup_import_confirm))
                 }

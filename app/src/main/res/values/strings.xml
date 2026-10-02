@@ -143,6 +143,8 @@ App usage and device stats are collected on a fixed cycle, independent of this s
     <string name="backup_import_dialog_hint">Enter a nickname so you can tell sources apart</string>
     <string name="backup_import_confirm">Import</string>
     <string name="backup_cancel">Cancel</string>
+    <string name="backup_import_no_password">The other side set no password — import directly</string>
+
     <string name="settings_about">Huahua %1$s · All data stays on this device</string>
     <string name="update_section_title">Check for updates</string>
     <string name="update_current">Current version %1$s</string>
@@ -215,6 +217,7 @@ App usage and device stats are collected on a fixed cycle, independent of this s
     <string name="backup_export_share_hint">Recommended. Opens the share sheet right away — pick WeChat and send.</string>
     <string name="backup_export_save">Save to file</string>
     <string name="backup_export_save_hint">Save to a location you choose, then send it later.</string>
+<string name="backup_export_no_password_tip">Exported. No data password set yet — the current encryption only stops casual reading. Consider setting one in Settings.</string>
     <string name="backup_export_done">Ready, opening share sheet…</string>
 
     <!-- Data retention -->
