@@ -176,7 +176,7 @@ interface AppUsageDao {
      * ⚠️ 别把这条当成性能修复 —— 实测删+重插 vs 纯 upsert：
      * 100 条时 0.24ms vs 0.27ms，300 条时 0.78ms vs 0.79ms，**没有差别**。
      * 改成 upsert 是为了代码语义更干净（不做无谓的删-插）。
-     * 卡顿的真因在主线程阻塞，见 TileDownloader / TrackMapView 的注释。
+     * 卡顿的真因在主线程阻塞，见 TrackMapView 的注释。
      */
     @Transaction
     suspend fun replaceDay(sourceId: String, day: String, items: List<AppUsage>) {

@@ -37,9 +37,8 @@ import org.osmdroid.util.MapTileIndex
  * 写在那里会 NPE。`const val` 是编译期内联，才可以在构造参数里用。
  */
 class AmapTileSource : OnlineTileSourceBase(
-    // ⚠️ name() 决定 osmdroid 的磁盘缓存目录名（<tileCache>/<name>/z/x/y.png），
-    //    也等于 TileDownloader 预下载时写入的目录。两边都引用 NAME，
-    //    改一处即可，不会出现「下载成功但地图空白」的错位。
+    // ⚠️ name() 决定 osmdroid 的磁盘缓存目录名（<tileCache>/<name>/z/x/y.png）。
+    //    改了这里等于换源：旧缓存目录会被弃用（不冲突，只是白占空间）。
     NAME,
     0,          // minZoom
     MAX_ZOOM,   // maxZoom
@@ -70,7 +69,6 @@ class AmapTileSource : OnlineTileSourceBase(
          * ⚠️ 实测：z19 和 z20 返回的是 179 字节的空瓦片，高德栅格最高到 18。
          * 写大了用户放大到最大级别会看到一片空白。
          *
-         * [TileDownloader] 也引用这个常量，保证「能显示的」和「能下载的」一致。
          * `const val` 是编译期内联，所以可以安全地用在超类构造参数里。
          */
         const val MAX_ZOOM = 18
@@ -96,8 +94,7 @@ private val BASE_URLS = arrayOf(
 /**
  * 构造某个瓦片的完整 URL。
  *
- * [AmapTileSource] 和 [TileDownloader] 共用这一个函数 —— 预下载写入磁盘的
- * 瓦片必须和地图组件请求的完全是同一张图，URL 构造逻辑分两份写迟早会走偏。
+ * 只有 [AmapTileSource] 在用。
  */
 internal fun amapTileUrl(z: Int, x: Int, y: Int): String {
     // 与 AmapTileSource.getTileURLString 用同一套散列，保证命中同一子域缓存

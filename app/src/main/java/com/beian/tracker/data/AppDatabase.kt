@@ -168,7 +168,7 @@ abstract class AppDatabase : RoomDatabase() {
          * ⚠️ 需要说清楚：**这不能解决卡顿**。实测 6 万行下，
          * 加复合索引只从 3.9ms 降到 3.7ms（约 1.1 倍），
          * 加上 timestamp 做覆盖排序也只到 3.2ms —— 毫秒级差异。
-         * 卡顿的真因是主线程阻塞，见 TileDownloader / TrackMapView 的注释。
+         * 卡顿的真因是主线程阻塞，见 TrackMapView 的注释。
          * 保留此迁移是为数据量继续增长后的收益，以及索引本身的正确性。
          *
          * 索引的删除/新建都是幂等的（IF EXISTS / IF NOT EXISTS），

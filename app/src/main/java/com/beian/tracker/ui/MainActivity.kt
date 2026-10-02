@@ -120,18 +120,7 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
                 tabs.forEachIndexed { i, tab ->
                     NavigationBarItem(
                         selected = index == i,
-                        onClick = {
-                            // ⚠️ 切页时停掉瓦片下载。
-                            //
-                            // 下载挂在 viewModelScope（Activity 作用域），
-                            // 不会随页面销毁而停止；而页面现在又被
-                            // movableContentOf 保活，onDispose 也指望不上。
-                            // 所以在这里 —— 用户真正点下另一个 tab 的那一刻 ——
-                            // 主动取消，避免后台继续刷 _downloadProgress
-                            // 触发跨页面重组（那正是「下载时切页面卡死」的成因）。
-                            if (i != index) vm.cancelTileDownload()
-                            index = i
-                        },
+                        onClick = { index = i },
                         icon = { Icon(tab.icon, contentDescription = null) },
                         label = { Text(stringResource(tab.labelRes)) },
                     )

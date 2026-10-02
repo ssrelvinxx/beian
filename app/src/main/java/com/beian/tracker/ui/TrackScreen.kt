@@ -58,7 +58,6 @@ fun TrackScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     val tracking by vm.trackingEnabled.collectAsStateWithLifecycle()
     val selectedDay by vm.selectedDay.collectAsStateWithLifecycle()
     val sourceId by vm.sourceId.collectAsStateWithLifecycle()
-    val offlineOnly by vm.offlineMapOnly.collectAsStateWithLifecycle()
 
     val isLocal = sourceId == LOCAL_SOURCE
 
@@ -185,7 +184,6 @@ fun TrackScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
 
         TrackMapView(
             points = points,
-            offlineMode = offlineOnly,
             showMyLocation = true,
             locationGranted = canUseLocation,
             onDistanceToPeer = { peerDistance = it },
@@ -284,13 +282,6 @@ fun TrackScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
             }
         }
 
-        Spacer(Modifier.size(16.dp))
-
-        // ── 离线地图管理 ──────────────────────────────────────────────────────
-        OfflineMapSection(
-            vm = vm,
-            modifier = Modifier.padding(horizontal = 16.dp),
-        )
 
         Spacer(Modifier.size(16.dp))
 

@@ -28,8 +28,7 @@ const val LOCAL_EXPORT_ID = "PEER"
  * ⚠️ **但它不是「卡顿」的根因**，别指望靠它解决问题。
  * 实测（6 万行）：单列索引 3.9ms/次，复合索引 3.7ms/次，仅快约 1.1 倍；
  * 加上 timestamp 做覆盖排序也只到 3.2ms。**毫秒级差异不足以造成卡顿。**
- * 真正的卡顿来自主线程阻塞（见 [com.beian.tracker.util.TileDownloader]
- * 与 TrackMapView 的注释）。
+ * 真正的卡顿来自主线程阻塞（见 TrackMapView 的注释）。
  *
  * 保留它是因为数据量继续增长后收益会放大，且属正确做法。
  */

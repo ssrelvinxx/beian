@@ -17,15 +17,11 @@ import com.beian.tracker.service.TrackService
 import com.beian.tracker.util.AppEventDeriver
 import com.beian.tracker.util.BackupCodec
 import com.beian.tracker.util.EventDedup
-import com.beian.tracker.util.MapTileStore
 import com.beian.tracker.util.SettingsStore
-import com.beian.tracker.util.TileDownloader
 import com.beian.tracker.util.TimeUtil
 import com.beian.tracker.util.UpdateChecker
 import com.beian.tracker.util.UsageStatsReader
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -37,12 +33,6 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-
-/** 已缓存的离线瓦片统计。 */
-data class TileStats(
-    val count: Int,
-    val bytes: Long,
-)
 
 /** 检查更新的界面状态。 */
 sealed interface UpdateUiState {
@@ -406,138 +396,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     val autoCheckUpdate: StateFlow<Boolean> = settings.autoCheckUpdate
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
-
-    // ── 离线地图 ──────────────────────────────────────────────────────────────
-
-    /** 强制离线模式。 */
-    val offlineMapOnly: StateFlow<Boolean> = settings.offlineMapOnly
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
-
-    /**
-     * 离线地图预下载的缩放级别。
-     *
-     * 固定为最高级，用户不可调 —— 界面上的「下载精细度」滑块已移除。
-     * 详见 [com.beian.tracker.util.SettingsStore.mapZoom]。
-     */
-    val mapZoom: Int get() = settings.mapZoom
-
-    /** 已缓存瓦片统计。 */
-    private val _tileStats = MutableStateFlow(TileStats(0, 0L))
-    val tileStats: StateFlow<TileStats> = _tileStats.asStateFlow()
-
-    /** 下载进度；null 表示未在下载。 */
-    private val _downloadProgress = MutableStateFlow<TileDownloader.Progress?>(null)
-    val downloadProgress: StateFlow<TileDownloader.Progress?> = _downloadProgress.asStateFlow()
-
-    private var downloadJob: Job? = null
-
-    /** 刷新已缓存瓦片统计（进离线页时调用）。 */
-    fun refreshTileStats() {
-        viewModelScope.launch(Dispatchers.IO) {
-            val count = MapTileStore.cachedTileCount(getApplication())
-            val size = MapTileStore.cachedSizeBytes(getApplication())
-            _tileStats.value = TileStats(count, size)
-        }
-    }
-
-    /**
-     * 按当前来源、当前日期的轨迹范围预下载瓦片。
-     * 没有轨迹时以最后一个已知点为中心下载一小片。
-     */
-    fun downloadOfflineTiles() {
-        val pts = todayPoints.value
-        if (pts.isEmpty()) {
-            _downloadProgress.value = null
-            post("这一天没有轨迹点，无法确定下载范围")
-            return
-        }
-
-        val app = getApplication<Application>()
-        val zoom = mapZoom
-        val minLat = pts.minOf { it.latitude }
-        val maxLat = pts.maxOf { it.latitude }
-        val minLon = pts.minOf { it.longitude }
-        val maxLon = pts.maxOf { it.longitude }
-
-        val tiles = TileDownloader.tilesFor(minLat, maxLat, minLon, maxLon, zoom)
-        if (tiles.isEmpty()) return
-
-        if (tiles.size > TileDownloader.MAX_TILES) {
-            post(
-                "范围太大（约 ${tiles.size} 个瓦片，上限 ${TileDownloader.MAX_TILES}）。" +
-                    "请调低缩放级别，或换一天轨迹更集中的日期",
-            )
-            return
-        }
-
-        downloadJob?.cancel()
-        downloadJob = TileDownloader.download(
-            scope = viewModelScope,
-            cacheDir = MapTileStore.tileCacheDir(app),
-            tiles = tiles,
-        ) { p ->
-            // ⚠️ 不要每张瓦片都刷新 UI 状态。
-            //
-            // onProgress 每下载完一张就回调一次，几百张瓦片就是几百次
-            // _downloadProgress.value 更新 → 每次都会触发 Compose 重组。
-            // 进度条只需「大致在动」，所以按百分比节流：
-            // 每跨过 2% 才刷新一次，首末两次必刷。
-            val lastPercent = _downloadProgress.value?.percent ?: -1
-            if (p.finished || lastPercent < 0 || p.percent - lastPercent >= 2 ||
-                p.percent == 100
-            ) {
-                _downloadProgress.value = p
-            }
-            if (p.finished) {
-                post(
-                    "离线地图已下载：${p.done - p.failed}/${p.total} 个瓦片" +
-                        if (p.failed > 0) "（${p.failed} 个失败）" else "",
-                )
-                refreshTileStats()
-                // 下载完成后清掉进度条
-                viewModelScope.launch {
-                    delay(1500)
-                    _downloadProgress.value = null
-                }
-            }
-        }
-    }
-
-    fun cancelTileDownload() {
-        downloadJob?.cancel()
-        // ⚠️ cancel() 不会中断已阻塞的 socket read，必须主动断开连接，
-        // 否则要等满 readTimeout（8 秒）才真正停下 —— 用户看到的就是「没反应」。
-        TileDownloader.abortCurrent()
-        downloadJob = null
-        _downloadProgress.value = null
-    }
-
-    /** 预估：当前轨迹范围在给定级别下需要多少瓦片。 */
-    fun estimateTiles(zoom: Int): Int {
-        val pts = todayPoints.value
-        if (pts.isEmpty()) return 0
-        return TileDownloader.estimateCount(
-            minLat = pts.minOf { it.latitude },
-            maxLat = pts.maxOf { it.latitude },
-            minLon = pts.minOf { it.longitude },
-            maxLon = pts.maxOf { it.longitude },
-            zoom = zoom,
-        )
-    }
-
-    fun clearOfflineTiles() {
-        viewModelScope.launch(Dispatchers.IO) {
-            MapTileStore.clear(getApplication())
-            withContext(Dispatchers.Main) {
-                post("离线地图已清空")
-                refreshTileStats()
-            }
-        }
-    }
-
-    fun setOfflineMapOnly(value: Boolean) {
-        viewModelScope.launch { settings.setOfflineMapOnly(value) }
-    }
 
     /** 一次性提示消息（UI 消费后调用 [consumeMessage] 清空）。 */
     private val _message = MutableStateFlow<String?>(null)

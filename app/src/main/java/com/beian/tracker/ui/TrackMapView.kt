@@ -68,14 +68,11 @@ import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
  * 1. 瓦片缓存放在**持久目录**（filesDir），系统清理缓存不会删掉离线地图。
  * 2. 无网络时 osmdroid 会优先读本地瓦片；命中的区域可正常显示。
  * 3. 完全无瓦片时，仍会绘制**轨迹线 + 起终点**，并把背景设为浅灰，避免纯空白。
- *
- * @param offlineMode 强制离线（只用本地瓦片，不发网络请求）
  */
 @Composable
 fun TrackMapView(
     points: List<TrackPoint>,
     modifier: Modifier = Modifier,
-    offlineMode: Boolean = false,
     /**
      * 是否显示「我的位置」蓝点。
      *
@@ -139,12 +136,6 @@ fun TrackMapView(
             setBackgroundColor(Color.parseColor("#FFEFE6EA"))
             controller.setZoom(15.0)
         }
-    }
-
-    // 离线开关变化时，控制网络瓦片下载
-    DisposableEffect(offlineMode) {
-        applyOfflineMode(mapView, offlineMode)
-        onDispose { }
     }
 
     // ── 「我的位置」蓝点 ────────────────────────────────────────────────────
@@ -316,7 +307,6 @@ fun TrackMapView(
             update = { _ ->
                 // 参数是外层容器（ChildInterceptBlocker），本块用不到 ——
                 // 地图操作一律用捕获的 mapView（传容器会类型不匹配）。
-                applyOfflineMode(mapView, offlineMode)
                 // 指纹：点数 + 首尾点（足够区分「没变」和「新增/切换了日期」）
                 val key = buildString {
                     append(points.size).append('|')
@@ -478,20 +468,6 @@ private const val FIRST_FIX_POLL_MS = 500L
  * 常驻会把地图角落长期占住，而且那个位置的信息只在点击那一刻有意义。
  */
 private const val REFRESH_MESSAGE_MS = 2_500L
-
-/**
- * 切换在线/离线。
- *
- * osmdroid 的网络下载开关：`setUseDataConnection`。
- * false 时只读本地缓存，完全不发请求 —— 真正的离线模式。
- */
-private fun applyOfflineMode(view: MapView, offline: Boolean) {
-    try {
-        view.setUseDataConnection(!offline)
-    } catch (_: Exception) {
-        // 某些版本签名不同，忽略
-    }
-}
 
 private fun onResume(view: MapView) {
     try {
@@ -837,10 +813,21 @@ private const val MAX_FIT_RETRIES = 3
  * osmdroid 的 MapView 在构造函数里就 `setOnTouchListener(this)`，
  * 它自己就是靠这个回调做全部手势识别的。覆盖它等于废掉地图的所有手势。
  *
- * 所以反过来做：**不动 MapView，只在它外面加一层**。
- * 这层容器不拦截任何事件（onInterceptTouchEvent 永远 false），
- * 只做一件事：把 MapView 发出的「别拦截我」请求继续往上传，
- * 从而让 Compose 的滚动容器在手指按下的这段时间里不抢手势。
+ * 为什么不能只靠 osmdroid 自己申请：
+ * 反编译 osmdroid 6.1.20 确认，**它从不调用**
+ * `requestDisallowInterceptTouchEvent`。也就是说地图自己不会跟外层说
+ * 「这段时间别抢我的手势」，外层滚动容器照样会在手指移动超过 slop 后
+ * 把纵向手势接管走。所以这个请求必须由我们代为发出。
+ *
+ * 做法：这层容器自己**不拦截**任何事件（[onInterceptTouchEvent] 永远 false），
+ * 但在地图被按住期间，代替地图向上层申请「别拦截」：
+ *   ACTION_DOWN           → 申请禁止外层拦截
+ *   ACTION_UP / CANCEL    → 解除申请，页面恢复正常滚动
+ *
+ * ⚠️ 必须在 ACTION_DOWN 就申请，不能等 MOVE 之后再判断方向。
+ * 外层 ViewGroup 判断「这是滚动」用的是超过 touch slop 的位移，
+ * 等收到 MOVE 再申请就晚了 —— 那一刻事件已经被外层拦截，
+ * 地图再也收不到后续的 MOVE，拖动就是断的。
  */
 private class ChildInterceptBlocker(
     context: android.content.Context,
@@ -858,6 +845,23 @@ private class ChildInterceptBlocker(
 
     /** 绝不拦截：事件必须原样到达 MapView。 */
     override fun onInterceptTouchEvent(ev: android.view.MotionEvent?): Boolean = false
+
+    /**
+     * 按在地图上时，把「别抢我手势」的请求一路传到最外层。
+     *
+     * 单指拖动地图靠的就是这里：没有它，纵向拖动会被外层
+     * verticalScroll 当成翻页吃掉，地图只能横向平移。
+     */
+    override fun dispatchTouchEvent(ev: android.view.MotionEvent?): Boolean {
+        when (ev?.actionMasked) {
+            android.view.MotionEvent.ACTION_DOWN ->
+                requestDisallowInterceptTouchEvent(true)
+            android.view.MotionEvent.ACTION_UP,
+            android.view.MotionEvent.ACTION_CANCEL ->
+                requestDisallowInterceptTouchEvent(false)
+        }
+        return super.dispatchTouchEvent(ev)
+    }
 
     /** 把子 View（MapView）的诉求继续往上传。 */
     override fun requestDisallowInterceptTouchEvent(disallowIntercept: Boolean) {
