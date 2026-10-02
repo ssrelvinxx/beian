@@ -566,6 +566,14 @@ fun BackupScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                                 fontFamily = FontFamily.Monospace,
                             ),
                             modifier = Modifier.fillMaxWidth(),
+                            supportingText = {
+                                // ⚠️ 这句必须写：加密包不携带「用了哪个口令」
+                                //    的信息（带上去等于教别人用内置口令试），
+                                //    所以「对方没设密码」的包看不出区别。
+                                //    不提示的话，接收方会对着这个框猜
+                                //    「我要填什么」，然后以为文件坏了。
+                                Text(stringResource(R.string.backup_import_no_password))
+                            },
                         )
                     }
 

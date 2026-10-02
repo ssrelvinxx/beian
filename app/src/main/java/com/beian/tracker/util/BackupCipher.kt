@@ -158,6 +158,10 @@ object BackupCipher {
     /**
      * 用**用户自设密码**解密。
      *
+     * @param password 用户输入的密码。**允许为空**，此时退回内置口令 ——
+     *        因为「对方没设密码」导出的包本身就是用内置口令加密的，
+     *        导入方无从得知这一点，只能拿空密码来试。
+     *        详见下方注释。
      * @throws IllegalArgumentException 密码不对 / 文件损坏 / 不是本 App 的包，
      *         带中文原因，调用方直接显示即可
      */
@@ -166,16 +170,29 @@ object BackupCipher {
         if (head.startsWith(LEGACY_MARKER)) {
             // v1 用的是内置固定盐，用户密码在这个格式下没有意义 ——
             // 它本来就只可能由内置口令加密而来。
-            return legacyOpen(head, deriveKey(FALLBACK_PASSPHRASE, FALLBACK_SALT.toByteArray(Charsets.UTF_8)))
+            return legacyOpen(
+                head,
+                deriveKey(FALLBACK_PASSPHRASE, FALLBACK_SALT.toByteArray(Charsets.UTF_8)),
+            )
         }
         if (!head.startsWith(MARKER)) {
             // 明文旧包：没有密码可用，也无从校验，直接交给上层解析
             return text
         }
-        if (password.isEmpty()) {
-            throw IllegalArgumentException("这个数据包需要密码，请先填写")
-        }
-        return open(head, deriveKey(password, extractSalt(head)))
+
+        // ⚠️ 空密码不能直接报错。
+        //
+        // 导出方「没设密码」时，包是用内置口令加密的 —— 但加密包本身
+        // **不携带「用了哪个口令」的信息**（带上去等于告诉别人用内置口令
+        // 试一下就能开）。导入方拿到这种包，密码框是空的，
+        // 如果这里直接抛「需要密码」，对方就会卡死在一个他根本不知道
+        // 该填什么的输入框前 —— 那是我们这边的设计把他堵住了，
+        // 不是他操作错。
+        //
+        // 所以空密码先试内置口令。试不开也没关系：会走下面的 catch，
+        // 报「密码不正确」，用户可以再手填真实密码重试。
+        val effective = password.ifEmpty { FALLBACK_PASSPHRASE }
+        return open(head, deriveKey(effective, extractSalt(head)))
     }
 
     /**
