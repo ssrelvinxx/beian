@@ -83,7 +83,7 @@ object BackupSharer {
 
     /** 只保留最近 [MAX_KEEP] 份导出。 */
     private fun trimOld(context: Context) {
-        dir(context).listFiles { f -> f.isFile && f.name.endsWith(".beian") }
+        dir(context).listFiles { f -> f.isFile && f.name.endsWith(BackupCodec.EXT) }
             ?.sortedByDescending { it.lastModified() }
             ?.drop(MAX_KEEP)
             ?.forEach { runCatching { it.delete() } }

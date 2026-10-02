@@ -58,6 +58,34 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <!--
+              外部打开数据包：在微信 / QQ / 文件管理器里点开 .hh，
+              选「用其他应用打开 → 花花动态」即可导入。
+              这是「简化导入」的核心 —— 不再需要进 App 里翻文件选择器。
+
+              ⚠️ 说明几个容易踩的点：
+                - mimeType 用 */*：微信转发文件时给的 MIME 五花八门
+                  （application/octet-stream、application/zip、
+                   甚至 text/plain），只声明 application/octet-stream
+                  会导致很多机型上微信**根本不列出本 App**。
+                - 这里**没有**用 pathPattern 卡 .hh 后缀：微信转发的是
+                  content:// 且带临时文件名，系统多半不提供路径数据，
+                  写了也匹配不上，反而可能把入口彻底屏蔽掉。
+                  所以真正的把关放在内容校验：
+                  BackupCipher.decrypt 认不出标记就报错，不会写库。
+                - exported=true：必须，否则外部应用无法唤起本 Activity。
+
+              内容层面的把关在 BackupCipher.decrypt / BackupCodec.decode：
+              不是本 App 的包会明确报错，不会写进数据库。
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" android:mimeType="*/*" />
+                <data android:scheme="file" android:mimeType="*/*" />
+            </intent-filter>
         </activity>
 
         <service

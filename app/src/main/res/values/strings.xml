@@ -96,8 +96,40 @@ App usage and device stats are collected on a fixed cycle, independent of this s
     <string name="backup_save">Save</string>
     <string name="backup_export">Export my data</string>
     <string name="backup_import">Import their data</string>
-    <string name="backup_import_hint">Pick the .beian file the other side sent you</string>
-    <string name="backup_import_action">Pick a .beian file</string>
+    <string name="backup_import_hint">The data file the other side sent you, ending in .hh</string>
+    <string name="backup_import_way_chat">Where to import from? Just tap it in the chat</string>
+    <string name="backup_import_way_chat_hint">In WeChat / QQ, tap the .hh file → top-right "…" → Open with another app → Huahua. The file is encrypted and decrypts automatically.</string>
+    <string name="backup_import_action">Pick a file from this phone</string>
+
+    <!-- Data package password -->
+    <string name="settings_backup_password">Data password</string>
+    <string name="settings_backup_password_desc">Exported files are encrypted with it. The other side must enter the same password to import — so tell them separately (not in the same message as the file).</string>
+    <string name="settings_backup_password_hint">Leave empty to use the built-in key (stops casual reading only)</string>
+    <string name="settings_backup_password_generate">Generate</string>
+    <string name="settings_backup_password_show">Show</string>
+    <string name="settings_backup_password_hide">Hide</string>
+    <string name="settings_backup_password_save">Save password</string>
+    <string name="settings_backup_password_saved">Password saved</string>
+    <string name="settings_backup_password_too_short">At least %1$d characters</string>
+    <string name="settings_backup_password_on">Password set — exported files need it to import</string>
+    <string name="settings_backup_password_off">No password: exports use the built-in key, which only stops casual reading. Setting one is recommended.</string>
+    <string name="settings_backup_password_forget">A password cannot be recovered. Keep it safe — once lost, files exported with it can never be opened.</string>
+    <string name="settings_backup_password_clear">Clear password</string>
+    <string name="settings_backup_password_clear_title">Clear the data password?</string>
+    <string name="settings_backup_password_clear_message">Files exported with this password that the other side has not imported yet will become permanently unreadable — the password will exist nowhere.</string>
+    <string name="settings_backup_password_clear_confirm">Clear</string>
+    <string name="settings_backup_password_cleared">Password cleared</string>
+
+    <!-- Import password -->
+    <string name="backup_import_password">Data password</string>
+    <string name="backup_import_password_hint">The password the sender set</string>
+    <string name="backup_import_nickname_optional">Nickname (optional)</string>
+    <string name="backup_import_nickname_example">e.g. Baby</string>
+    <string name="backup_import_nickname_hint">An encrypted file hides the nickname inside it, so type one here</string>
+
+    <!-- Export password status -->
+    <string name="backup_export_no_password_warning">No password: the built-in key will be used, which only stops casual reading. Set one in Settings.</string>
+    <string name="backup_export_password_hint">Encrypted with your password — remember to tell the other side</string>
     <string name="backup_imported">Imported</string>
     <string name="backup_delete">Delete</string>
     <string name="backup_clear_local">Clear local data</string>

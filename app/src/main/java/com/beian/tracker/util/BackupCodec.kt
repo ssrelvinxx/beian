@@ -19,6 +19,19 @@ object BackupCodec {
     const val MAGIC = "beian-backup"
     const val VERSION = 1
 
+    /**
+     * 导出文件的后缀。
+     *
+     * 用 .hh（花花）而不是 .beian：短，发给对方时文件名好看，
+     * 也和 App 名对得上。
+     *
+     * ⚠️ 改这里**必须同步改** AndroidManifest 里 VIEW intent 的
+     *    pathPattern —— 否则「点文件直接导入」那条路就断了。
+     *    （加密包认的是 [BackupCipher.MARKER]，与后缀无关，
+     *     所以旧后缀的包仍能导入，只是不会再生成。）
+     */
+    const val EXT = ".hh"
+
     /** 一个完整的数据包。 */
     data class Bundle(
         val sourceId: String,

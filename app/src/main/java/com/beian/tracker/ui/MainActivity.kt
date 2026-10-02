@@ -1,5 +1,7 @@
 package com.beian.tracker.ui
 
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -37,21 +39,62 @@ import com.beian.tracker.R
 import com.beian.tracker.service.TrackService
 
 class MainActivity : ComponentActivity() {
+
+    /**
+     * 外部送进来的数据包 Uri（在微信 / 文件管理器里点开 .hh）。
+     *
+     * ⚠️ 用 onNewIntent 而不是只在 onCreate 里读：
+     *    如果 App 已经在后台（很常见 —— 用户刚在数据页导出完就切去微信），
+     *    系统会复用已有实例并走 onNewIntent，onCreate 根本不会再跑一次。
+     *    只处理 onCreate 的话，第二次点文件导入就毫无反应。
+     *
+     * ⚠️ 必须调 setIntent：ComponentActivity 的 onNewIntent 默认不会把
+     *    新 intent 存进 getIntent()，不自己存一份的话，
+     *    某些场景（Activity 被重建）会拿回旧 intent。
+     */
+    private var incomingUriState = androidx.compose.runtime.mutableStateOf<Uri?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        incomingUriState.value = extractUri(intent)
         setContent {
             BeiAnTheme {
-                MainScreen()
+                MainScreen(externalUri = incomingUriState.value)
             }
         }
     }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        incomingUriState.value = extractUri(intent)
+    }
+
+    /**
+     * 从 ACTION_VIEW intent 里取出文件 Uri。
+     *
+     * ⚠️ 只认 ACTION_VIEW。不要把所有外来 intent 都当成导入 ——
+     *    App 还带 launcher / 更新安装等入口，误判会让点图标启动时
+     *    弹出一个莫名其妙的导入框。真正的内容校验（是不是本 App 的包）
+     *    还是在解析那一步做，见 BackupCipher.decrypt。
+     */
+    private fun extractUri(intent: Intent?): Uri? =
+        if (intent?.action == Intent.ACTION_VIEW) intent.data else null
 }
 
 private data class TabItem(val labelRes: Int, val icon: ImageVector)
 
 @Composable
-fun MainScreen(vm: MainViewModel = viewModel()) {
+fun MainScreen(
+    vm: MainViewModel = viewModel(),
+    /**
+     * 从外部点开 .hh 文件带进来的 Uri，可为空。
+     *
+     * 非空时自动切到「数据」页并交给 BackupScreen 走导入流程。
+     */
+    externalUri: Uri? = null,
+) {
     val tabs = listOf(
         TabItem(R.string.tab_report, Icons.Filled.Today),
         TabItem(R.string.tab_track, Icons.Filled.LocationOn),
@@ -60,6 +103,20 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
         TabItem(R.string.tab_settings, Icons.Filled.Settings),
     )
     var index by remember { mutableIntStateOf(0) }
+
+    // 外部点开文件 → 直接落到「数据」页，导入弹窗就在那里弹。
+    //
+    // 不切页的话，用户从微信点进来会停在报备页，看着像「点了没反应」——
+    // 而导入弹窗其实长在数据页里。
+    //
+    // Uri 转交给 ViewModel 而不是层层传参：这样 BackupScreen 无论
+    // 从哪条路进来（点文件 / 点按钮）都只认同一个来源，不必区分。
+    LaunchedEffect(externalUri) {
+        if (externalUri != null) {
+            index = BACKUP_TAB_INDEX
+            vm.requestExternalImport(externalUri)
+        }
+    }
 
     /**
      * ⚠️ 用 movableContentOf 保住各页面的组合状态，切 Tab 时**不销毁重建**。
@@ -145,3 +202,6 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
     // 之前它长在设置页的 UpdateSection 里，等于「检查到了也不提示」。
     UpdateAvailableDialog(vm)
 }
+
+/** 「数据」页在 bottom bar 里的下标。外部导入要落到这一页。 */
+private const val BACKUP_TAB_INDEX = 3

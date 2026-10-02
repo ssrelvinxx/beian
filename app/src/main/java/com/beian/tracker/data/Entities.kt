@@ -8,7 +8,7 @@ import androidx.room.PrimaryKey
 const val LOCAL_SOURCE = "LOCAL"
 
 /**
- * 导出到 .beian 文件时写进文件里的 sourceId。
+ * 导出到 .hh 文件时写进文件里的 sourceId。
  *
  * 必须和 [LOCAL_SOURCE] 不同 —— 导入端拿文件里的这个值当「对方」的标识，
  * 两边要是撞了，对方数据会把本机数据覆盖掉。

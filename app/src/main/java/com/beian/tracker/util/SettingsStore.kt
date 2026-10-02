@@ -28,6 +28,21 @@ class SettingsStore(private val context: Context) {
     // ── 数据保留 ──────────────────────────────────────────────────────────────
     private val keyRetentionDays = intPreferencesKey("retention_days")
 
+    // ── 数据包密码 ────────────────────────────────────────────────────────────
+    /**
+     * 导出数据包用的加密密码，空串表示未设置。
+     *
+     * ⚠️ 这里存的是**明文**，不是哈希。看起来别扭，但没法避免：
+     *    导出时要拿它加密，必须能还原出原文，单向哈希做不到。
+     *    好在这个密码的用途是「让对方解不开」，不是「保护本机」——
+     *    它本来就只存在于两台手机上，泄露的前提是手机已经被翻过了，
+     *    那时数据包直接读走更省事。所以明文存 DataStore 是可接受的取舍。
+     *
+     * ⚠️ 它是**双方约定的同一个密码**，不是各设各的：
+     *    接收方导入时要输的，就是导出方这里填的那个。
+     */
+    private val keyBackupPassword = stringPreferencesKey("backup_password")
+
     val intervalSec: Flow<Int> = context.dataStore.data.map { it[keyInterval] ?: DEFAULT_INTERVAL }
 
     val trackingEnabled: Flow<Boolean> = context.dataStore.data.map { it[keyEnabled] ?: false }
@@ -88,6 +103,27 @@ class SettingsStore(private val context: Context) {
         }
     }
 
+    /** 数据包加密密码；空串 = 未设置（导出时会退回内置密钥，见 BackupCipher）。 */
+    val backupPassword: Flow<String> = context.dataStore.data.map {
+        it[keyBackupPassword] ?: ""
+    }
+
+    /**
+     * 保存密码，返回是否设置成功。
+     *
+     * 长度限制到 [MAX_BACKUP_PASSWORD]：PBKDF2 本身不介意更长的密码，
+     * 但太长的密码在两边手输 / 转发时极易打错一个字符，
+     * 而密码错一个字符的结果是「完全解不开」，没有任何提示余量。
+     */
+    suspend fun setBackupPassword(value: String): Boolean {
+        val trimmed = value.trim()
+        if (trimmed.isNotEmpty() && trimmed.length < MIN_BACKUP_PASSWORD) return false
+        context.dataStore.edit {
+            it[keyBackupPassword] = trimmed.take(MAX_BACKUP_PASSWORD)
+        }
+        return true
+    }
+
     suspend fun setTrackingEnabled(value: Boolean) {
         context.dataStore.edit { it[keyEnabled] = value }
     }
@@ -126,5 +162,16 @@ class SettingsStore(private val context: Context) {
 
         /** 可设的最大保留天数（约 3 年）。 */
         const val MAX_RETENTION_DAYS = 1095
+
+        /**
+         * 数据包密码的最短长度。
+         *
+         * 6 位是下限：再短就纯粹是「防君子」了，
+         * 而且这个密码要经微信转发，短密码很容易被旁人一眼记住。
+         */
+        const val MIN_BACKUP_PASSWORD = 6
+
+        /** 数据包密码的最大长度（见 [setBackupPassword] 的说明）。 */
+        const val MAX_BACKUP_PASSWORD = 64
     }
 }

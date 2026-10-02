@@ -15,6 +15,7 @@ import com.beian.tracker.data.TrackPoint
 import com.beian.tracker.data.TrackRepository
 import com.beian.tracker.service.TrackService
 import com.beian.tracker.util.AppEventDeriver
+import com.beian.tracker.util.BackupCipher
 import com.beian.tracker.util.BackupCodec
 import com.beian.tracker.util.EventDedup
 import com.beian.tracker.util.SettingsStore
@@ -241,6 +242,22 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "")
 
     /**
+     * 数据包加密密码（空串 = 未设置）。
+     *
+     * ⚠️ 这是**双方约定的同一个密码**：导出用它加密，
+     *    对方导入时要输的就是它。
+     */
+    val backupPassword: StateFlow<String> = settings.backupPassword
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "")
+
+    /**
+     * 设置数据包密码。
+     *
+     * @return false 表示密码太短、没被接受（界面据此提示）
+     */
+    suspend fun setBackupPassword(value: String): Boolean = settings.setBackupPassword(value)
+
+    /**
      * 本机数据保留天数。
      *
      * 0 = 不自动清理（默认）。见 [com.beian.tracker.util.SettingsStore.retentionDays]。
@@ -298,32 +315,86 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     // ── 导入 / 导出 ───────────────────────────────────────────────────────────
 
-    /** 打包本机数据为 JSON 文本。days = 0 表示全部。 */
-    suspend fun buildBackupJson(days: Int): String {
-        val nickname = myNickname.value
-        return BackupCodec.encode(repository.buildLocalBundle(days = days, nickname = nickname))
+    /**
+     * 从 App 外部送进来的待导入文件（在微信里点开 .hh → 用本 App 打开）。
+     *
+     * 为什么不直接在 Activity 里处理：导入要「填昵称 + 二次确认」，
+     * 那套交互长在 [com.beian.tracker.ui.BackupScreen] 里。
+     * 这里只负责把 Uri 递过去，界面拿到后会自动切到数据页并弹窗。
+     */
+    private val _externalImport = MutableStateFlow<android.net.Uri?>(null)
+    val externalImport: StateFlow<android.net.Uri?> = _externalImport.asStateFlow()
+
+    /** 由 MainActivity 在收到 ACTION_VIEW 时调用。 */
+    fun requestExternalImport(uri: android.net.Uri) {
+        _externalImport.value = uri
+    }
+
+    /** 界面已接管该 Uri（弹窗已弹出），清掉避免重复触发。 */
+    fun consumeExternalImport() {
+        _externalImport.value = null
     }
 
     /**
-     * 导入对方数据。
-     * @return 导入结果描述；失败抛出带中文原因的异常。
+     * 打包本机数据，返回**加密后**的文本。days = 0 表示全部。
+     *
+     * 流程是 JSON 编码 → AES-GCM 加密，两层分开：BackupCodec 只管数据结构，
+     * BackupCipher 只管加密，任一层单独替换都不影响另一层。
+     *
+     * ⚠️ 调用方必须在 IO 线程：编码要遍历全部轨迹点，加密还要跑一次
+     *    PBKDF2（首次）—— 叠在一起足以让主线程卡住好几秒。
+     *
+     * @return 形如 "hh-enc-v1\n<Base64>" 的文本
      */
+    suspend fun buildBackupJson(days: Int): String {
+        val nickname = myNickname.value
+        val plain = BackupCodec.encode(repository.buildLocalBundle(days = days, nickname = nickname))
+        // 设了密码就用密码加密；没设则退回内置口令（仍然是加密的，
+        // 只是强度低一档），保证「没设密码也能一键导出导入」这条路不断。
+        return BackupCipher.encryptWithPassword(plain, backupPassword.value)
+    }
+
     /**
-     * 先解析文件、读出里面的昵称，供导入弹窗做默认值 ——
+     * 这段文本是不是需要密码的加密包。
+     *
+     * 界面用它决定要不要弹「输密码」框：明文旧包不该弹。
+     */
+    fun needsPassword(text: String): Boolean = BackupCipher.isEncrypted(text)
+
+    /**
+     * 先解密、解析文件，读出里面的昵称，供导入弹窗做默认值 ——
      * 对方导出时已经填过昵称了，不该再让人重填一遍。
      *
-     * @return 文件里的昵称（可能为空），解析失败时抛异常
+     * @param password 用户输入的密码；为空时退回内置口令尝试
+     * @return 文件里的昵称（可能为空），
+     *         密码不对 / 解析失败时抛带中文原因的异常
      */
-    fun peekImportNickname(text: String): String =
-        BackupCodec.decode(text, sourceIdOverride = PROBE_SOURCE_ID).nickname
+    fun peekImportNickname(text: String, password: String): String =
+        BackupCodec.decode(
+            BackupCipher.decryptWithPassword(text, password),
+            sourceIdOverride = PROBE_SOURCE_ID,
+        ).nickname
 
-    suspend fun importBackupJson(text: String, nickname: String): ImportedSource {
+    /**
+     * 导入对方数据。
+     *
+     * @param password 数据包密码（导入弹窗里填的）
+     */
+    suspend fun importBackupJson(
+        text: String,
+        nickname: String,
+        password: String,
+    ): ImportedSource {
         // ⚠️ 必须覆盖 sourceId。
         // 老版本导出包里的 sourceId 是 "LOCAL"，直接沿用会和本机数据撞 id，
         // 导致报备页出现两张卡、切不过去、本机数据被覆盖。
         // 这里统一换成一次性生成的来源 id，每个导入包各自独立。
         val newSourceId = "PEER-" + System.currentTimeMillis().toString(36)
-        val bundle = BackupCodec.decode(text, sourceIdOverride = newSourceId)
+        // 先解密（兼容旧明文包），再按结构解析
+        val bundle = BackupCodec.decode(
+            BackupCipher.decryptWithPassword(text, password),
+            sourceIdOverride = newSourceId,
+        )
         return repository.importBundle(bundle, nickname)
     }
 

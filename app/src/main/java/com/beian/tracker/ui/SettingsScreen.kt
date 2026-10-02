@@ -102,6 +102,11 @@ fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         // 和「采集间隔」并列：都属于「数据怎么攒、攒多久」的偏好。
         RetentionSection(vm)
 
+        // ── 数据包密码 ────────────────────────────────────────────────────────
+        // 导出包要经微信转发，明文等于把轨迹摊在聊天记录里。
+        // 密码是「双方约定」的那一个，接收方导入时输同一个。
+        BackupPasswordSection(vm)
+
         // ── 后台常驻 ──────────────────────────────────────────────────────────
         BackgroundSection()
 

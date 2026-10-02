@@ -22,6 +22,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -29,6 +30,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -42,18 +44,39 @@ import kotlinx.coroutines.withContext
 
 /**
  * 数据互通页：
- * - 导出：把本机数据写成 .beian 文件，通过任意方式发给对方
- * - 导入：选择对方发来的文件，填昵称，导入后即可查看
+ * - 导出：把本机数据加密后写成 .hh 文件，通过任意方式发给对方
+ * - 导入：两条路 —— 在聊天里直接点开 .hh（推荐），或从 App 里选文件；
+ *   两条路都汇到同一个「填昵称 → 确认」弹窗
  */
 @Composable
 fun BackupScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val sources by vm.importedSources.collectAsStateWithLifecycle()
     val myNickname by vm.myNickname.collectAsStateWithLifecycle()
+    val backupPassword by vm.backupPassword.collectAsStateWithLifecycle()
 
     var nicknameInput by remember { mutableStateOf(myNickname) }
     var pendingImportUri by remember { mutableStateOf<Uri?>(null) }
     var nicknameForImport by remember { mutableStateOf("") }
+    /**
+     * 已经读进内存的包内容。
+     *
+     * 外部（微信）点进来的 content:// Uri 读权限是系统临时授予的，
+     * 拖到用户点「导入」时再去读可能已经失效，所以一拿到就缓存下来。
+     */
+    var externalText by remember { mutableStateOf<String?>(null) }
+
+    /** 导入弹窗里填的密码。 */
+    var importPassword by remember { mutableStateOf("") }
+
+    /**
+     * 当前待导入的包是否需要密码。
+     *
+     * 明文旧包不需要，就不该显示密码框 —— 否则用户对着一串乱码
+     * 猜「是不是要输密码」。
+     */
+    var importNeedsPassword by remember { mutableStateOf(false) }
+
     var confirmClearLocal by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
 
@@ -105,25 +128,92 @@ fun BackupScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         if (uri == null) return@rememberLauncherForActivityResult
         pendingImportUri = uri
         nicknameForImport = ""
-        // 读一下文件，把对方导出时填的昵称预填进输入框 —— 不用再问一遍
+        importPassword = ""
+        // ⚠️ 这里**不再**预读昵称。
         //
-        // ⚠️ 必须切到 IO。
+        // 加密后昵称在密文里，要读出它得先有密码 —— 而这一步
+        // 恰恰是「等用户填密码」。所以顺序反过来了：
+        // 先弹框让用户输密码，输对了再解密。
         //
-        // rememberCoroutineScope() 的调度器是 Dispatchers.Main.immediate，
-        // 而 openInputStream().readText() 是**同步阻塞的文件读** ——
-        // 导出包几 MB 时，这一下就把主线程占住几百毫秒到几秒。
-        // 用户看到的就是「选完文件卡住不动」（ANR 里那条
-        // Input dispatching timed out 就是这种）。
+        // 只判断「要不要密码」，决定弹框里显不显示密码框。
+        //
+        // ⚠️ 必须切到 IO：读文件是同步阻塞操作，包几 MB 时
+        //    留在主线程会卡住界面。
         scope.launch(Dispatchers.IO) {
             runCatching {
                 val text = context.contentResolver.openInputStream(uri)
                     ?.bufferedReader()?.use { it.readText() }
                     ?: throw IllegalArgumentException("无法读取文件")
-                vm.peekImportNickname(text)
-            }.onSuccess { name ->
-                // 仅在用户还没输入时填入，别覆盖正在打字的内容
+                text
+            }.onSuccess { text ->
                 withContext(Dispatchers.Main) {
-                    if (nicknameForImport.isBlank()) nicknameForImport = name
+                    externalText = text
+                    importNeedsPassword = vm.needsPassword(text)
+                    // 明文旧包没有密码可输，直接把它的昵称解析出来预填
+                    if (!importNeedsPassword) {
+                        runCatching { vm.peekImportNickname(text, "") }
+                            .onSuccess { name ->
+                                if (nicknameForImport.isBlank()) nicknameForImport = name
+                            }
+                    }
+                }
+            }.onFailure { e ->
+                withContext(Dispatchers.Main) {
+                    pendingImportUri = null
+                    externalText = null
+                    Toast.makeText(
+                        context,
+                        e.message ?: "无法读取该文件",
+                        Toast.LENGTH_LONG,
+                    ).show()
+                }
+            }
+        }
+    }
+
+    // ── 外部点开 .hh 文件送进来的 Uri ──────────────────────────────────────────
+    //
+    // 用户在微信里点开对方发的 .hh、选「用其他应用打开 → 花花动态」时，
+    // MainActivity 会把 Uri 放进 ViewModel，这里接过来走同一套弹窗流程。
+    // 两条入口（App 内选文件 / 外部点文件）最终汇到 pendingImportUri，
+    // 后续的填昵称、确认导入只有一份实现。
+    val externalUri by vm.externalImport.collectAsStateWithLifecycle()
+    LaunchedEffect(externalUri) {
+        val uri = externalUri ?: return@LaunchedEffect
+        // ⚠️ 先清再处理：不清的话配置变化（旋转屏幕）会重复触发一次导入。
+        vm.consumeExternalImport()
+        pendingImportUri = uri
+        nicknameForImport = ""
+        importPassword = ""
+        // ⚠️ content:// 的读权限是系统临时授予的，只在本次 intent 的范围内有效 ——
+        //    不能拖到用户点「导入」时才读，那时权限可能已失效（SecurityException）。
+        //    所以一拿到就立刻读进内存。这里只读文件、不解密（解密要等用户填密码）。
+        scope.launch(Dispatchers.IO) {
+            runCatching {
+                context.contentResolver.openInputStream(uri)
+                    ?.bufferedReader()?.use { it.readText() }
+                    ?: throw IllegalArgumentException("无法读取文件")
+            }.onSuccess { text ->
+                withContext(Dispatchers.Main) {
+                    externalText = text
+                    importNeedsPassword = vm.needsPassword(text)
+                    if (!importNeedsPassword) {
+                        // 明文旧包：可直接读昵称预填
+                        runCatching { vm.peekImportNickname(text, "") }
+                            .onSuccess { name ->
+                                if (nicknameForImport.isBlank()) nicknameForImport = name
+                            }
+                    }
+                }
+            }.onFailure { e ->
+                withContext(Dispatchers.Main) {
+                    pendingImportUri = null
+                    externalText = null
+                    Toast.makeText(
+                        context,
+                        e.message ?: "无法读取该文件",
+                        Toast.LENGTH_LONG,
+                    ).show()
                 }
             }
         }
@@ -190,6 +280,23 @@ fun BackupScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
                 )
+
+                // 没设密码时给一句明确提示：包仍然会加密，但用的是内置口令，
+                // 强度只够「防随手打开看一眼」。用户有权知道这一点，
+                // 而不是以为默认就是安全的。
+                if (backupPassword.isBlank()) {
+                    Text(
+                        text = stringResource(R.string.backup_export_no_password_warning),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                } else {
+                    Text(
+                        text = stringResource(R.string.backup_export_password_hint),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
 
                 // 主路径：生成后直接弹分享面板。
                 //
@@ -282,6 +389,20 @@ fun BackupScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                // 主路径：让用户直接在微信/QQ 里点开文件。
+                // 这是最省事的做法 —— 文件在哪、叫什么都不用管，
+                // 也不必进 App 里一级级翻系统文件选择器。
+                Text(
+                    text = stringResource(R.string.backup_import_way_chat),
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Medium,
+                )
+                Text(
+                    text = stringResource(R.string.backup_import_way_chat_hint),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                // 备选路径：文件已经存到手机里了，用系统的文件选择器挑。
                 Button(
                     onClick = { importLauncher.launch(arrayOf("*/*")) },
                     modifier = Modifier.fillMaxWidth(),
@@ -404,7 +525,10 @@ fun BackupScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         )
     }
 
-    // ── 导入时填昵称 ──────────────────────────────────────────────────────────
+    // ── 导入弹窗：输密码 + 昵称 ───────────────────────────────────────────────
+    //
+    // ⚠️ 顺序上密码在前：没有正确密码，包里的昵称根本读不出来
+    //    （它在密文里），所以不能再像以前那样自动预填。
     pendingImportUri?.let { uri ->
         AlertDialog(
             onDismissRequest = { pendingImportUri = null },
@@ -412,11 +536,36 @@ fun BackupScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(stringResource(R.string.backup_import_dialog_hint))
+
+                    // 需要密码的包才显示密码框：旧版明文包不该让用户
+                    // 对着一串乱码猜「是不是要密码」。
+                    if (importNeedsPassword) {
+                        OutlinedTextField(
+                            value = importPassword,
+                            onValueChange = { importPassword = it },
+                            singleLine = true,
+                            // 导入时默认**明文显示**密码：
+                            // 这是个「一次性的、会失败的」输入 ——
+                            // 打错了没有第二次机会（包已经存下来了），
+                            // 打码只会让人看不清自己输错在哪一位。
+                            label = { Text(stringResource(R.string.backup_import_password)) },
+                            placeholder = { Text(stringResource(R.string.backup_import_password_hint)) },
+                            textStyle = MaterialTheme.typography.bodyLarge.copy(
+                                fontFamily = FontFamily.Monospace,
+                            ),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+
                     OutlinedTextField(
                         value = nicknameForImport,
                         onValueChange = { nicknameForImport = it.take(24) },
                         singleLine = true,
-                        placeholder = { Text("例如：宝贝") },
+                        label = { Text(stringResource(R.string.backup_import_nickname_optional)) },
+                        placeholder = { Text(stringResource(R.string.backup_import_nickname_example)) },
+                        supportingText = {
+                            Text(stringResource(R.string.backup_import_nickname_hint))
+                        },
                     )
                 }
             },
@@ -424,17 +573,26 @@ fun BackupScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                 TextButton(
                     onClick = {
                         val target = uri
+                        val cached = externalText
+                        // 昵称留空时用「对方」兜底 —— 导入后还能在来源列表里改。
                         val name = nicknameForImport.trim().ifBlank { "对方" }
+                        val pwd = importPassword
                         pendingImportUri = null
-                        // 同上：文件读 + JSON 解析都是同步重活，必须切 IO。
+                        externalText = null
+                        importPassword = ""
+                        // 同上：文件读 + 解密 + JSON 解析都是同步重活，必须切 IO。
                         // 导入时的包更大（含全部轨迹点），留在主线程必然 ANR。
                         scope.launch(Dispatchers.IO) {
                             try {
-                                val text = context.contentResolver.openInputStream(target)
-                                    ?.bufferedReader()
-                                    ?.use { it.readText() }
+                                // 优先用已缓存的内容（外部点进来的场景），
+                                // 没有再按 Uri 读（App 内选文件的场景，
+                                // 那个 Uri 的权限是持久有效的）。
+                                val text = cached
+                                    ?: context.contentResolver.openInputStream(target)
+                                        ?.bufferedReader()
+                                        ?.use { it.readText() }
                                     ?: throw IllegalArgumentException("无法读取文件")
-                                val src = vm.importBackupJson(text, name)
+                                val src = vm.importBackupJson(text, name, pwd)
                                 withContext(Dispatchers.Main) {
                                     Toast.makeText(
                                         context,
@@ -467,10 +625,10 @@ fun BackupScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
 }
 
 /**
- * 导出文件名：beian_<日期>.beian
+ * 导出文件名：hh_<日期>.hh
  *
  * 用日期而不是时间戳：对方收到时一眼能看出是哪天的数据，
  * 同名再次导出时覆写即可（旧文件本来也没用）。
  */
 private fun backupFileName(): String =
-    "beian_${TimeUtil.dayKey().replace("-", "")}.beian"
+    "hh_${TimeUtil.dayKey().replace("-", "")}${BackupCodec.EXT}"

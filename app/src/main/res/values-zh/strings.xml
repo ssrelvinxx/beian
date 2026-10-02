@@ -96,8 +96,40 @@ App 使用统计与设备状态按固定周期采集，不受这里影响。</st
     <string name="backup_save">保存</string>
     <string name="backup_export">导出我的数据</string>
     <string name="backup_import">导入对方的数据</string>
-    <string name="backup_import_hint">选择对方发给你的 .beian 文件</string>
-    <string name="backup_import_action">选择 .beian 文件</string>
+    <string name="backup_import_hint">对方发来的数据包，后缀是 .hh</string>
+    <string name="backup_import_way_chat">从哪里导入？聊天里直接点开就行</string>
+    <string name="backup_import_way_chat_hint">在微信 / QQ 聊天里点那个 .hh 文件 → 右上角「…」→ 用其他应用打开 → 选「花花动态」。数据包已加密，就地自动解密导入。</string>
+    <string name="backup_import_action">从手机里选择文件</string>
+
+    <!-- 数据包密码 -->
+    <string name="settings_backup_password">数据包密码</string>
+    <string name="settings_backup_password_desc">导出数据包时用它加密。对方导入时填同一个密码才能打开 —— 所以设好后要另外告诉对方（别和文件发在同一条消息里）。</string>
+    <string name="settings_backup_password_hint">留空则不加密包（用内置口令，仅防随手查看）</string>
+    <string name="settings_backup_password_generate">随机生成</string>
+    <string name="settings_backup_password_show">显示</string>
+    <string name="settings_backup_password_hide">隐藏</string>
+    <string name="settings_backup_password_save">保存密码</string>
+    <string name="settings_backup_password_saved">密码已保存</string>
+    <string name="settings_backup_password_too_short">至少 %1$d 位</string>
+    <string name="settings_backup_password_on">已设置密码，导出的数据包需要密码才能导入</string>
+    <string name="settings_backup_password_off">未设密码：导出的包用内置口令加密，只能防随手查看，建议设一个</string>
+    <string name="settings_backup_password_forget">密码无法找回，请自己记牢。忘了就再也打不开用这个密码导出的包。</string>
+    <string name="settings_backup_password_clear">清除密码</string>
+    <string name="settings_backup_password_clear_title">清除数据包密码？</string>
+    <string name="settings_backup_password_clear_message">清除后，之前用这个密码导出、但对方还没导入的数据包将永久无法打开，因为密码不再存在于任何地方。</string>
+    <string name="settings_backup_password_clear_confirm">清除</string>
+    <string name="settings_backup_password_cleared">密码已清除</string>
+
+    <!-- 导入时输密码 -->
+    <string name="backup_import_password">数据包密码</string>
+    <string name="backup_import_password_hint">对方导出时设置的密码</string>
+    <string name="backup_import_nickname_optional">昵称（可留空）</string>
+    <string name="backup_import_nickname_example">例如：宝贝</string>
+    <string name="backup_import_nickname_hint">数据包加密后读不到里面的昵称，可在这里自己填一个</string>
+
+    <!-- 导出时的密码状态 -->
+    <string name="backup_export_no_password_warning">未设密码：将用内置口令加密，只能防随手查看。建议去设置里设一个。</string>
+    <string name="backup_export_password_hint">已用你的密码加密，记得把密码告诉对方</string>
     <string name="backup_imported">已导入</string>
     <string name="backup_delete">删除</string>
     <string name="backup_clear_local">清空本机数据</string>
