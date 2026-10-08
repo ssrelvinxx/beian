@@ -14,14 +14,17 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.stickyHeader
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -158,6 +161,19 @@ fun ReportScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                 )
             }
         } else {
+            // ── 按天分组 ─────────────────────────────────────────────────────
+            //
+            // 事件流原来是**一长串混在一起**的：recentEvents 取最近 300 条，
+            // 中间跨了好几天也没有分界，昨天的和今天的挨在一起往下排，
+            // 看不出哪里换了一天（只有每条气泡自己的时间）。
+            //
+            // 这里按 dayKey 切段并插入日期头。分组在**客户端**做而不是
+            // 改成「按天查询 + 多个列表」：事件已经按时间倒序取回来了，
+            // 就地切段不需要额外的数据库往返；而且列表始终是同一个
+            // LazyColumn，滚动位置不会因为切分而丢失。
+            val grouped = remember(events) {
+                events.groupBy { it.dayKey }.toList().sortedByDescending { it.first }
+            }
             LazyColumn(
                 state = listState,
                 modifier = Modifier
@@ -166,10 +182,50 @@ fun ReportScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 12.dp),
             ) {
-                items(events, key = { it.id }) { e ->
-                    EventBubble(event = e, fromMe = e.sourceId != LOCAL_SOURCE)
+                grouped.forEach { (day, dayEvents) ->
+                    // stickyHeader：滚到某天中间时日期条仍然钉在顶部，
+                    // 否则一屏里全是气泡，又回到「看不出这是哪天」。
+                    stickyHeader(key = "hdr-$day") {
+                        DayHeader(day = day, count = dayEvents.size)
+                    }
+                    items(dayEvents, key = { it.id }) { e ->
+                        EventBubble(event = e, fromMe = e.sourceId != LOCAL_SOURCE)
+                    }
                 }
             }
+        }
+    }
+}
+
+/**
+ * 事件流的日期分隔头。
+ *
+ * 带背景色 + 满宽：它是「粘」在顶部的，气泡会从它下面滚过去，
+ * 没有实底会透出下面的内容，看着很乱。
+ */
+@Composable
+private fun DayHeader(day: String, count: Int) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 4.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = TimeUtil.dayLabel(day),
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                text = "$count 条",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

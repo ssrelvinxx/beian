@@ -30,6 +30,19 @@ object TimeUtil {
         SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
     }
 
+    /** 文件名用：20261002-1644。见 [fileStamp]。 */
+    private val fileStampFormat = ThreadLocal.withInitial {
+        SimpleDateFormat("yyyyMMdd-HHmm", Locale.US)
+    }
+    /** 日期标题里的月日：09月28日。见 [dayLabel]。 */
+    private val monthDayFormat = ThreadLocal.withInitial {
+        SimpleDateFormat("MM月dd日", Locale.CHINA)
+    }
+    /** 日期标题里的星期：周一。见 [dayLabel]。 */
+    private val weekdayFormat = ThreadLocal.withInitial {
+        SimpleDateFormat("EEEE", Locale.CHINA)
+    }
+
     fun dayKey(timestamp: Long = System.currentTimeMillis()): String =
         dayFormat.get()!!.format(Date(timestamp))
 
@@ -37,6 +50,38 @@ object TimeUtil {
 
     fun dateTime(timestamp: Long): String =
         dateTimeFormat.get()!!.format(Date(timestamp))
+
+    /**
+     * 文件名用的紧凑时间戳：`20261002-1644`。
+     *
+     * 只到分钟、无分隔符：
+     *   · 到分钟是因为导出这件事被做到「同一分钟里导两次」不常见，
+     *     而秒会让名字更长、更难看全；
+     *   · 无分隔符（不用 `:`）是因为冒号在部分文件系统和
+     *     微信/邮件传输里会被替换或截断，而点号、连字符是安全字符。
+     */
+    fun fileStamp(timestamp: Long = System.currentTimeMillis()): String =
+        fileStampFormat.get()!!.format(Date(timestamp))
+
+    /**
+     * 日期标题：今天 / 昨天 / 09月28日 周一。
+     *
+     * 近期用「今天」「昨天」而不是具体日期：报备事件流里人最常看的就是
+     * 这两天，写成 2026-10-02 还得自己在脑子里换算一遍。
+     * 更早的日期才显示月日，并补一个星期几 —— 回看历史时
+     * 「那天是周几」是判断「这行为像不像本人」的一个关键线索。
+     */
+    fun dayLabel(dayKey: String): String {
+        val today = dayKey()
+        if (dayKey == today) return "今天"
+        if (dayKey == dayKey(startOfDay(1))) return "昨天"
+
+        val parsed = runCatching { dayFormat.get()!!.parse(dayKey) }.getOrNull()
+            ?: return dayKey
+        val md = monthDayFormat.get()!!.format(parsed)
+        val wd = weekdayFormat.get()!!.format(parsed)
+        return "$md $wd"
+    }
 
     /** 今日 00:00 的时间戳。 */
     fun startOfToday(): Long = startOfDay(0)

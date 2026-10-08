@@ -54,7 +54,6 @@ fun BackupScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val sources by vm.importedSources.collectAsStateWithLifecycle()
     val myNickname by vm.myNickname.collectAsStateWithLifecycle()
-    val backupPassword by vm.backupPassword.collectAsStateWithLifecycle()
 
     var nicknameInput by remember { mutableStateOf(myNickname) }
     var pendingImportUri by remember { mutableStateOf<Uri?>(null) }
@@ -106,14 +105,14 @@ fun BackupScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                     }
                 }
                 withContext(Dispatchers.Main) {
-                    // 没设密码时顺带提醒一句 —— 方案 B：不拦着导出，
-                    // 但要让用户知道「现在的加密强度只够防随手一看」。
-                    val tip = if (backupPassword.isEmpty()) {
-                        context.getString(R.string.backup_export_no_password_tip)
-                    } else {
-                        "已导出"
-                    }
-                    Toast.makeText(context, tip, Toast.LENGTH_LONG).show()
+                    // ⚠️ 不再有「没设密码」分支：首次启动就自动生成了密码，
+                    //    backupPassword 恒定非空（见 SettingsStore.ensureBackupPassword）。
+                    //    导出前提示用户把密码告诉对方，而不是提醒「强度不够」。
+                    Toast.makeText(
+                        context,
+                        context.getString(R.string.backup_export_done),
+                        Toast.LENGTH_LONG,
+                    ).show()
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
@@ -289,22 +288,13 @@ fun BackupScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                     fontWeight = FontWeight.Bold,
                 )
 
-                // 没设密码时给一句明确提示：包仍然会加密，但用的是内置口令，
-                // 强度只够「防随手打开看一眼」。用户有权知道这一点，
-                // 而不是以为默认就是安全的。
-                if (backupPassword.isBlank()) {
-                    Text(
-                        text = stringResource(R.string.backup_export_no_password_warning),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                } else {
-                    Text(
-                        text = stringResource(R.string.backup_export_password_hint),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                }
+                // 密码恒定存在（首次启动自动生成），所以这里不再区分
+                // 「设没设」两套文案，统一提示「记得把密码告诉对方」。
+                Text(
+                    text = stringResource(R.string.backup_export_password_hint),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
 
                 // 主路径：生成后直接弹分享面板。
                 //
@@ -341,11 +331,7 @@ fun BackupScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                                 }
                                 Toast.makeText(
                                     context,
-                                    if (backupPassword.isEmpty()) {
-                                        context.getString(R.string.backup_export_no_password_tip)
-                                    } else {
-                                        context.getString(R.string.backup_export_done)
-                                    },
+                                    context.getString(R.string.backup_export_done),
                                     Toast.LENGTH_LONG,
                                 ).show()
                                 BackupSharer.shareFile(context, file)
@@ -659,10 +645,15 @@ fun BackupScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
 }
 
 /**
- * 导出文件名：hh_<日期>.hh
+ * 导出文件名：`hh_20261002-1644.hh`。
  *
- * 用日期而不是时间戳：对方收到时一眼能看出是哪天的数据，
- * 同名再次导出时覆写即可（旧文件本来也没用）。
+ * ⚠️ 必须带时间，不能只有日期。
+ *
+ * 原来只有日期时，同一天导出多次会落到同一个文件名：后一次直接覆写前一次。
+ * 而这些文件是要发出去的 —— 对方手上可能同时收到当天的两个包，
+ * 名字却一模一样，既分不清哪个是新的，也无法判断是几点导出的。
+ *
+ * 保留日期在前，是为了在文件列表里按名字排序时天然按时间先后排列。
  */
 private fun backupFileName(): String =
-    "hh_${TimeUtil.dayKey().replace("-", "")}${BackupCodec.EXT}"
+    "hh_${TimeUtil.fileStamp()}${BackupCodec.EXT}"

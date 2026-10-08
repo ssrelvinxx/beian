@@ -35,6 +35,9 @@
     <string name="history_hourly_axis">0 时 — 6 时 — 12 时 — 18 时 — 24 时</string>
     <string name="history_points">%1$d 点</string>
     <string name="history_day_detail">当日详情</string>
+    <string name="stats_source_local">本机数据</string>
+    <string name="stats_source_imported">对方数据 · %1$s</string>
+    <string name="stats_source_range">数据范围 %1$s ~ %2$s</string>
 
     <string name="status_updated_at">更新于 %1$s</string>
     <string name="status_app_usage">今日 App 使用</string>
@@ -104,7 +107,7 @@ App 使用统计与设备状态按固定周期采集，不受这里影响。</st
     <!-- 数据包密码 -->
     <string name="settings_backup_password">数据包密码</string>
     <string name="settings_backup_password_desc">导出数据包时用它加密。对方导入时填同一个密码才能打开 —— 所以设好后要另外告诉对方（别和文件发在同一条消息里）。</string>
-    <string name="settings_backup_password_hint">留空则不加密包（用内置口令，仅防随手查看）</string>
+    <string name="settings_backup_password_hint">点下面「随机生成」可以换一个</string>
     <string name="settings_backup_password_generate">随机生成</string>
     <string name="settings_backup_password_show">显示</string>
     <string name="settings_backup_password_hide">隐藏</string>
@@ -112,13 +115,12 @@ App 使用统计与设备状态按固定周期采集，不受这里影响。</st
     <string name="settings_backup_password_saved">密码已保存</string>
     <string name="settings_backup_password_too_short">至少 %1$d 位</string>
     <string name="settings_backup_password_on">已设置密码，导出的数据包需要密码才能导入</string>
-    <string name="settings_backup_password_off">未设密码：导出的包用内置口令加密，只能防随手查看，建议设一个</string>
+    <string name="settings_backup_password_share_hint">导出前把这串密码单独告诉对方（别和文件发在同一条消息里），对方导入时要用它。</string>
     <string name="settings_backup_password_forget">密码无法找回，请自己记牢。忘了就再也打不开用这个密码导出的包。</string>
-    <string name="settings_backup_password_clear">清除密码</string>
-    <string name="settings_backup_password_clear_title">清除数据包密码？</string>
+    <string name="settings_backup_password_regenerate">重新生成密码</string>
+    <string name="settings_backup_password_clear_title">重新生成数据包密码？</string>
     <string name="settings_backup_password_clear_message">清除后，之前用这个密码导出、但对方还没导入的数据包将永久无法打开，因为密码不再存在于任何地方。</string>
-    <string name="settings_backup_password_clear_confirm">清除</string>
-    <string name="settings_backup_password_cleared">密码已清除</string>
+    <string name="settings_backup_password_regenerated">已生成新密码，请把它告诉对方</string>
 
     <!-- 导入时输密码 -->
     <string name="backup_import_password">数据包密码</string>
@@ -128,7 +130,6 @@ App 使用统计与设备状态按固定周期采集，不受这里影响。</st
     <string name="backup_import_nickname_hint">数据包加密后读不到里面的昵称，可在这里自己填一个</string>
 
     <!-- 导出时的密码状态 -->
-    <string name="backup_export_no_password_warning">未设密码：将用内置口令加密，只能防随手查看。建议去设置里设一个。</string>
     <string name="backup_export_password_hint">已用你的密码加密，记得把密码告诉对方</string>
     <string name="backup_imported">已导入</string>
     <string name="backup_delete">删除</string>
@@ -216,7 +217,6 @@ App 使用统计与设备状态按固定周期采集，不受这里影响。</st
     <string name="backup_export_share_hint">推荐。生成后立刻弹出分享面板，选微信等发出去即可。</string>
     <string name="backup_export_save">保存到文件</string>
     <string name="backup_export_save_hint">存到手机里自己指定位置，之后再手动发送。</string>
-<string name="backup_export_no_password_tip">已导出。还没设数据包密码，当前加密强度只够防随手一看，建议到设置里设一个</string>
     <string name="backup_export_done">已生成，正在打开分享…</string>
 
     <!-- 数据保留 -->

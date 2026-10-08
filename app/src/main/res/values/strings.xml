@@ -35,6 +35,9 @@
     <string name="history_hourly_axis">0h — 6h — 12h — 18h — 24h</string>
     <string name="history_points">%1$d pts</string>
     <string name="history_day_detail">Day detail</string>
+    <string name="stats_source_local">This device</string>
+    <string name="stats_source_imported">Other device · %1$s</string>
+    <string name="stats_source_range">Covers %1$s ~ %2$s</string>
 
     <string name="status_updated_at">Updated at %1$s</string>
     <string name="status_app_usage">Screen time by app</string>
@@ -104,7 +107,7 @@ App usage and device stats are collected on a fixed cycle, independent of this s
     <!-- Data package password -->
     <string name="settings_backup_password">Data password</string>
     <string name="settings_backup_password_desc">Exported files are encrypted with it. The other side must enter the same password to import — so tell them separately (not in the same message as the file).</string>
-    <string name="settings_backup_password_hint">Leave empty to use the built-in key (stops casual reading only)</string>
+    <string name="settings_backup_password_hint">Tap "Generate" below to change it</string>
     <string name="settings_backup_password_generate">Generate</string>
     <string name="settings_backup_password_show">Show</string>
     <string name="settings_backup_password_hide">Hide</string>
@@ -112,13 +115,12 @@ App usage and device stats are collected on a fixed cycle, independent of this s
     <string name="settings_backup_password_saved">Password saved</string>
     <string name="settings_backup_password_too_short">At least %1$d characters</string>
     <string name="settings_backup_password_on">Password set — exported files need it to import</string>
-    <string name="settings_backup_password_off">No password: exports use the built-in key, which only stops casual reading. Setting one is recommended.</string>
     <string name="settings_backup_password_forget">A password cannot be recovered. Keep it safe — once lost, files exported with it can never be opened.</string>
-    <string name="settings_backup_password_clear">Clear password</string>
-    <string name="settings_backup_password_clear_title">Clear the data password?</string>
+    <string name="settings_backup_password_share_hint">Tell the other side this password separately before exporting (not in the same message as the file). They will need it to import.</string>
+    <string name="settings_backup_password_regenerate">Generate a new password</string>
+    <string name="settings_backup_password_clear_title">Generate a new data password?</string>
     <string name="settings_backup_password_clear_message">Files exported with this password that the other side has not imported yet will become permanently unreadable — the password will exist nowhere.</string>
-    <string name="settings_backup_password_clear_confirm">Clear</string>
-    <string name="settings_backup_password_cleared">Password cleared</string>
+    <string name="settings_backup_password_regenerated">New password generated - tell the other side</string>
 
     <!-- Import password -->
     <string name="backup_import_password">Data password</string>
@@ -128,7 +130,6 @@ App usage and device stats are collected on a fixed cycle, independent of this s
     <string name="backup_import_nickname_hint">An encrypted file hides the nickname inside it, so type one here</string>
 
     <!-- Export password status -->
-    <string name="backup_export_no_password_warning">No password: the built-in key will be used, which only stops casual reading. Set one in Settings.</string>
     <string name="backup_export_password_hint">Encrypted with your password — remember to tell the other side</string>
     <string name="backup_imported">Imported</string>
     <string name="backup_delete">Delete</string>
@@ -217,7 +218,6 @@ App usage and device stats are collected on a fixed cycle, independent of this s
     <string name="backup_export_share_hint">Recommended. Opens the share sheet right away — pick WeChat and send.</string>
     <string name="backup_export_save">Save to file</string>
     <string name="backup_export_save_hint">Save to a location you choose, then send it later.</string>
-<string name="backup_export_no_password_tip">Exported. No data password set yet — the current encryption only stops casual reading. Consider setting one in Settings.</string>
     <string name="backup_export_done">Ready, opening share sheet…</string>
 
     <!-- Data retention -->

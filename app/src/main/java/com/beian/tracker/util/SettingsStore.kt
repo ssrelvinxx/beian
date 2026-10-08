@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 private val Context.dataStore by preferencesDataStore(name = "beian_settings")
@@ -103,13 +104,48 @@ class SettingsStore(private val context: Context) {
         }
     }
 
-    /** 数据包加密密码；空串 = 未设置（导出时会退回内置密钥，见 BackupCipher）。 */
+    /**
+     * 数据包加密密码。
+     *
+     * ⚠️ 现在**不会再是空串**：首次启动时自动生成一个随机密码
+     *    （见 [ensureBackupPassword]），留空保存也会被替换成随机密码。
+     *    空串只剩一种来源：全新的 DataStore 还没被初始化过的那一瞬，
+     *    所以取不到值时的兜底是 [FALLBACK_BACKUP_PASSWORD] ——
+     *    宁可给出一个可用的随机值，也不让「未加密导出」这条路默默打开。
+     */
     val backupPassword: Flow<String> = context.dataStore.data.map {
-        it[keyBackupPassword] ?: ""
+        it[keyBackupPassword]?.takeIf { pwd -> pwd.isNotEmpty() } ?: FALLBACK_BACKUP_PASSWORD
+    }
+
+    /**
+     * 确保存在一个密码；没有就生成一个随机的并存下来。
+     *
+     * ⚠️ 由 [com.beian.tracker.BeiAnApp] 在每次启动时调用（幂等）。
+     *
+     * 为什么必须自动生成、而不是留空让用户自己来设：
+     *   留空时导出会退回**内置口令**加密 —— 那个口令写在反编译就能
+     *   看到的代码里，等于没加密。而用户不知道这件事，以为
+     *   「看起来是乱码就是安全了」，于是最该保护的轨迹数据
+     *   实际上谁都能解开。默认值必须落在安全的一侧：
+     *   自动生成的 16 位随机密码，用户什么都不做也是安全的。
+     *
+     * @return 当前生效的密码（新生成的或已存在的）
+     */
+    suspend fun ensureBackupPassword(): String {
+        val current = context.dataStore.data.first()[keyBackupPassword].orEmpty()
+        if (current.isNotEmpty()) return current
+        val generated = BackupCipher.generatePassword()
+        context.dataStore.edit { it[keyBackupPassword] = generated }
+        return generated
     }
 
     /**
      * 保存密码，返回是否设置成功。
+     *
+     * ⚠️ 传空串**不会**把密码清掉，而是生成一个新的随机密码。
+     *    密码为空就等于退回内置口令（无实际保护），这条路不再开放。
+     *    语义从「清除」变成了「换成一个随机值」——界面上的按钮
+     *    也相应改成了「重新生成」。
      *
      * 长度限制到 [MAX_BACKUP_PASSWORD]：PBKDF2 本身不介意更长的密码，
      * 但太长的密码在两边手输 / 转发时极易打错一个字符，
@@ -118,8 +154,9 @@ class SettingsStore(private val context: Context) {
     suspend fun setBackupPassword(value: String): Boolean {
         val trimmed = value.trim()
         if (trimmed.isNotEmpty() && trimmed.length < MIN_BACKUP_PASSWORD) return false
+        val effective = trimmed.ifEmpty { BackupCipher.generatePassword() }
         context.dataStore.edit {
-            it[keyBackupPassword] = trimmed.take(MAX_BACKUP_PASSWORD)
+            it[keyBackupPassword] = effective.take(MAX_BACKUP_PASSWORD)
         }
         return true
     }
@@ -173,5 +210,20 @@ class SettingsStore(private val context: Context) {
 
         /** 数据包密码的最大长度（见 [setBackupPassword] 的说明）。 */
         const val MAX_BACKUP_PASSWORD = 64
+
+        /**
+         * 兜底密码：DataStore 里还没写入过密码时用它顶上。
+         *
+         * ⚠️ 进程内随机生成一次，**不落盘**。
+         *    它只覆盖「App 刚启动、[ensureBackupPassword] 还没来得及写」
+         *    那一小段窗口，正常使用中界面看到的是真正落盘的那个值。
+         *
+         * 之所以要有它，而不是让 [backupPassword] 直接吐空串：
+         * 空串在整条链路上意味着「用内置口令加密」，而那个口令
+         * 反编译即可看到。宁可给一个当前进程独有的随机值 ——
+         * 万一真在窗口期导出了，包也是安全的（只是密码没被别人知道，
+         * 重导一次即可），而不是悄悄降级成无效加密。
+         */
+        val FALLBACK_BACKUP_PASSWORD: String by lazy { BackupCipher.generatePassword() }
     }
 }

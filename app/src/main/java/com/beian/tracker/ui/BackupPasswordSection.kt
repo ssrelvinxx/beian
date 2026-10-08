@@ -61,11 +61,13 @@ fun BackupPasswordSection(vm: MainViewModel, modifier: Modifier = Modifier) {
 
     // 已保存的密码回填到输入框：进来就能看见当前用的是哪个，
     // 免得用户忘了自己设过没有、又重设一遍。
+    //
+    // ⚠️ [saved] 不再会是空串（首次启动就自动生成，见 SettingsStore），
+    //    所以这里回填的一定是个真密码。
     LaunchedEffect(saved) {
         if (input.isEmpty()) input = saved
     }
 
-    val hasPassword = saved.isNotEmpty()
     val tooShort = input.isNotEmpty() && input.length < SettingsStore.MIN_BACKUP_PASSWORD
     val changed = input != saved
 
@@ -168,34 +170,46 @@ fun BackupPasswordSection(vm: MainViewModel, modifier: Modifier = Modifier) {
             }
 
             // ── 当前状态 ──────────────────────────────────────────────────────
+            //
+            // ⚠️ 这里不再有「未设密码」分支：首次启动就自动生成了一个，
+            //    留空保存也会被替换成随机值，所以密码**永远存在**。
             Text(
-                text = if (hasPassword) {
-                    stringResource(R.string.settings_backup_password_on)
-                } else {
-                    stringResource(R.string.settings_backup_password_off)
-                },
+                text = stringResource(R.string.settings_backup_password_on),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.primary,
             )
 
-            if (hasPassword) {
-                // 忘了无法找回 —— 事前写清楚，别让用户丢了数据才知道。
-                Text(
-                    text = stringResource(R.string.settings_backup_password_forget),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.error,
-                )
-                TextButton(onClick = { confirmClear = true }) {
-                    Text(stringResource(R.string.settings_backup_password_clear))
-                }
+            // 忘了无法找回 —— 事前写清楚，别让用户丢了数据才知道。
+            Text(
+                text = stringResource(R.string.settings_backup_password_forget),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+
+            // ⚠️ 这个密码是自动生成的，用户很可能从没注意过它。
+            //    必须明确告诉他「导出前要把这串告诉对方」，
+            //    否则对方拿到包会卡在输密码那一步，也不知道该问谁。
+            Text(
+                text = stringResource(R.string.settings_backup_password_share_hint),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            // 「重新生成」而不是「清除」：清除后密码为空 = 退回内置口令
+            // （无效加密），这条路不再开放。要换密码只能换一个新的随机值。
+            //
+            // ⚠️ 换密码同样不可逆：用它导出、对方还没导入的包会永久打不开。
+            //    所以仍然要二次确认。
+            TextButton(onClick = { confirmClear = true }) {
+                Text(stringResource(R.string.settings_backup_password_regenerate))
             }
         }
     }
 
-    // ── 清空密码：二次确认 ────────────────────────────────────────────────────
+    // ── 重新生成密码：二次确认 ────────────────────────────────────────────────
     //
-    // ⚠️ 必须确认。清掉之后，凡是「用这个密码加密、但还没导入」的包
-    //    就永久打不开了 —— 密码已不存在于任何地方。
+    // ⚠️ 必须确认。换掉之后，凡是「用旧密码加密、但还没导入」的包
+    //    就永久打不开了 —— 旧密码不再存在于任何地方。
     if (confirmClear) {
         AlertDialog(
             onDismissRequest = { confirmClear = false },
@@ -206,18 +220,21 @@ fun BackupPasswordSection(vm: MainViewModel, modifier: Modifier = Modifier) {
                     onClick = {
                         confirmClear = false
                         scope.launch {
-                            vm.setBackupPassword("")
-                            input = ""
+                            // 传空串 = 生成一个新的随机密码（见 setBackupPassword）。
+                            val fresh = BackupCipher.generatePassword()
+                            vm.setBackupPassword(fresh)
+                            input = fresh
+                            showPassword = true
                             Toast.makeText(
                                 context,
-                                context.getString(R.string.settings_backup_password_cleared),
-                                Toast.LENGTH_SHORT,
+                                context.getString(R.string.settings_backup_password_regenerated),
+                                Toast.LENGTH_LONG,
                             ).show()
                         }
                     },
                 ) {
                     Text(
-                        text = stringResource(R.string.settings_backup_password_clear_confirm),
+                        text = stringResource(R.string.settings_backup_password_regenerate),
                         color = MaterialTheme.colorScheme.error,
                     )
                 }
