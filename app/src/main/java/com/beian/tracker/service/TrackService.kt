@@ -73,6 +73,23 @@ class TrackService : Service() {
     @Volatile
     private var lastKnown: Location? = null
 
+    /**
+     * [lastKnown] 这个坐标的「采集时刻」。
+     *
+     * ⚠️ 不能用 `lastKnown.time` 代替。
+     *
+     * 心跳补点时会构造一个「坐标是锚点、时间是现在」的新 Location，
+     * 若把那个对象存回 lastKnown，`lastKnown.time` 就变成了心跳时刻 ——
+     * 于是「锚点有多旧」永远算不出来，上面那道
+     * [HEARTBEAT_COORD_MAX_AGE_MS] 判断就彻底失效，
+     * 又会退化成「用几小时前的坐标一直补点」。
+     *
+     * 所以锚点的新鲜度必须单独记：它只反映「系统最后一次真正给出位置」
+     * 是什么时候，不受心跳自己造的点影响。
+     */
+    @Volatile
+    private var anchorAt = 0L
+
     /** 实时事件接收器（屏幕 / 电量 / 网络）。 */
     private val eventReceiver = EventReceiver()
     private var receiverRegistered = false
@@ -95,6 +112,7 @@ class TrackService : Service() {
             // 真实回调：记录时间与位置，供静止心跳判断「系统还在给点吗」。
             lastFixAt = System.currentTimeMillis()
             lastKnown = location
+            anchorAt = location.time
             scope.launch { repository.recordPoint(location) }
         }
 
@@ -253,7 +271,6 @@ class TrackService : Service() {
     /** 心跳单轮：只在「真实回调已经停了」才补点。 */
     private suspend fun heartbeatOnce() {
         val now = System.currentTimeMillis()
-        val loc = lastKnown ?: return
 
         // 人在动：真实回调还在正常来，不要补重复点。
         //
@@ -261,15 +278,58 @@ class TrackService : Service() {
         // 卡得太死会在「刚好一个周期」时误判成静止，多补一个点。
         if (lastFixAt != 0L && now - lastFixAt < STAY_HEARTBEAT_MS - STAY_HEARTBEAT_MS / 4) return
 
-        // 复用最近坐标，但把时间戳换成「现在」——
-        // 否则补进去的点还带着旧时间，落库后排序错乱，
-        // 停留段的时间跨度也算不出来。
+        // 用系统缓存刷新锚点（有更新的就用）。
         //
-        // 只改时间，不改坐标：静止时位置本来就没变，
-        // 不主动唤醒 GPS 去取新点（见 [lastKnown] 注释）。
-        val point = Location(loc).apply { time = now }
+        // 我们的定位请求一直是活跃的，系统缓存的最后位置由 provider
+        // 持续维护，所以这里读到的是「当前位置」，且不会额外唤醒 GPS。
+        // 静止时缓存通常不更新，那就继续用原锚点 —— 人没动，坐标仍然对。
+        val cached = freshestCachedLocation()
+        if (cached != null && cached.time > anchorAt) {
+            lastKnown = cached
+            anchorAt = cached.time
+        }
+        val anchor = lastKnown ?: return
+
+        // ⚠️ 限制「连续靠同一个锚点补点」的最长时间。
+        //
+        // 我们无法区分这两种情况：
+        //   a) 人还坐在原地（锚点仍然有效）
+        //   b) 人走了，但定位链路整个失效了（GPS 一直定不到位、
+        //      权限被撤、定位被系统冻结）
+        // 两者都是「长时间没有任何新位置」。
+        //
+        // 上限之内的补点当作 (a)：合理，静止本就是这样。
+        // 超过上限就按 (b) 处理、停止补点 —— 否则会以几小时前的坐标
+        // 一直补下去，写出「在这个位置停留了一整晚」这种假记录。
+        //
+        // 少记一次停留是「缺」，写出一段不存在的是「假」，优先避免后者。
+        if (anchorAt != 0L && now - anchorAt > HEARTBEAT_COORD_MAX_AGE_MS) return
+
+        // 坐标取锚点，时间取「现在」。
+        //
+        // ⚠️ 时间必须换成 now。若沿用锚点里的旧时间戳，连续几个心跳点
+        //    的时间几乎不动，停留段的跨度就永远凑不满 STAY_MIN_MS ——
+        //    这正是原来「停留记录一直为空」的成因之一。
+        //
+        // 坐标**不**取新值：静止时位置本来就没变，没必要唤醒 GPS。
+        val point = Location(anchor).apply { time = now }
         repository.recordPoint(point)
     }
+
+    /** 取系统缓存里最新的一个位置（多个 provider 中挑最新的），可能为 null。 */
+    private fun freshestCachedLocation(): Location? =
+        listOf(
+            LocationManager.GPS_PROVIDER,
+            LocationManager.NETWORK_PROVIDER,
+        ).mapNotNull { provider ->
+            try {
+                locationManager.getLastKnownLocation(provider)
+            } catch (_: SecurityException) {
+                null
+            } catch (_: Exception) {
+                null
+            }
+        }.maxByOrNull { it.time }
 
     /**
      * 注册系统定位回调。
@@ -369,11 +429,20 @@ class TrackService : Service() {
             }
         }.maxByOrNull { it.time } ?: return
 
+        // ⚠️ 心跳的坐标来源在这里赋值，必须**先于**新鲜度检查。
+        //
+        // 冷启动（手机重启后、服务被杀后重拉）时系统缓存位置往往已经
+        // 超过 LAST_KNOWN_MAX_AGE_MS —— 而静止心跳正是为了「人不动」的
+        // 场景，那个坐标恰恰是几小时前的同一个地点，完全可用。
+        // 若先做检查再赋值，这类启动下 lastKnown 永远是 null，
+        // 心跳一次都补不出点，修复等于没做。
+        //
+        // 落库与否仍然严格按新鲜度判断（见下），只是心跳可用旧坐标。
+        lastKnown = freshest
+        anchorAt = freshest.time
+
         if (now - freshest.time > LAST_KNOWN_MAX_AGE_MS) return
 
-        // 记下来给静止心跳用：刚启动、还没来真实回调时，
-        // 心跳至少有个位置可补（否则这一段还是空的）。
-        lastKnown = freshest
         // ⚠️ 这里**不**更新 lastFixAt：种子来自系统缓存，不是新鲜回调。
         //    更新了会让心跳误以为「刚收到点」，把该补的时段跳过去。
 
@@ -598,6 +667,19 @@ class TrackService : Service() {
          * 2 分钟是「够密以支撑判定、又不至于冗余」的位置。
          */
         private const val STAY_HEARTBEAT_MS = 2 * 60_000L
+
+        /**
+         * 心跳连续复用同一个锚点坐标的上限（毫秒）。
+         *
+         * 超过这个时长仍没有任何新位置，就停止补点 —— 因为无法区分
+         * 「人还坐在原地」和「定位链路已失效」，继续补只会写出
+         * 「在几小时前那个位置停留到现在」的假记录。
+         *
+         * 取 1 小时：正常的一段停留（在家、上班、吃饭）都在这个量级，
+         * 超出的更可能是采集本身出了问题。宁可断开这一段（少记），
+         * 也不写出一段不存在的停留（记错）。
+         */
+        private const val HEARTBEAT_COORD_MAX_AGE_MS = 60 * 60_000L
 
         /**
          * 服务是否正在运行。
