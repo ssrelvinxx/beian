@@ -1,5 +1,6 @@
 package com.beian.tracker.ui
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,7 +15,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.lazy.stickyHeader
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.HorizontalDivider
@@ -44,6 +44,7 @@ import com.beian.tracker.util.TimeUtil
  * - 右侧绿气泡 = 我方（本机）事件
  * 顶部展示对方昵称、在线状态、最新电量。
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ReportScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     val sourceId by vm.sourceId.collectAsStateWithLifecycle()
