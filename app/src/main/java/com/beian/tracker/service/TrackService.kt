@@ -42,6 +42,37 @@ class TrackService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var tickerJob: Job? = null
 
+    /** 静止心跳。见 [startStayHeartbeat]。 */
+    private var heartbeatJob: Job? = null
+
+    /**
+     * 最近一次**真实定位回调**的时间戳。
+     *
+     * ⚠️ 心跳必须靠它判断「系统还在给不给点」，不能只看心跳自己发了几次。
+     *
+     * 心跳要解决的问题是：静止时定位回调不来（`minDistance=10m`），
+     * 于是整天零点位、「停留」永远算不出来。但如果系统其实一直在正常
+     * 回调（人在移动），心跳再补点就是**往轨迹里塞重复点** ——
+     * 里程会略微偏高，地图上也会出现叠在一起的点。
+     *
+     * 所以心跳只在「距上次真实回调超过心跳周期」时才补。
+     * 用 @Volatile：写在定位回调线程（locationHandler），
+     * 读在 scope 的 IO 线程，不能靠 happens-before 侥幸。
+     */
+    @Volatile
+    private var lastFixAt = 0L
+
+    /**
+     * 最近一次已知位置（真实回调或种子都算），心跳补点直接复用它。
+     *
+     * 心跳**不主动去请求一次定位**（不用 getCurrentLocation）：
+     * 那会额外唤醒 GPS，静止时白耗电，而且国行 ROM 上这个调用
+     * 经常直接回调一个缓存值 —— 花了电却拿不到新东西。
+     * 静止时位置本来就没变，复用最近一次足够。
+     */
+    @Volatile
+    private var lastKnown: Location? = null
+
     /** 实时事件接收器（屏幕 / 电量 / 网络）。 */
     private val eventReceiver = EventReceiver()
     private var receiverRegistered = false
@@ -61,6 +92,9 @@ class TrackService : Service() {
      */
     private val locationListener = object : LocationListener {
         override fun onLocationChanged(location: Location) {
+            // 真实回调：记录时间与位置，供静止心跳判断「系统还在给点吗」。
+            lastFixAt = System.currentTimeMillis()
+            lastKnown = location
             scope.launch { repository.recordPoint(location) }
         }
 
@@ -154,6 +188,9 @@ class TrackService : Service() {
             }
             // ⚠️ 快照周期不再跟「轨迹间隔」绑定，用独立的固定值，见 startTicker 注释。
             startTicker()
+            // 静止心跳：没有它，静止时段一个点都没有，
+            // 「停留」就永远算不出来。见 startStayHeartbeat。
+            startStayHeartbeat()
         }
     }
 
@@ -176,6 +213,62 @@ class TrackService : Service() {
             registeredProviders.clear()
             requestUpdates(interval)
         }
+    }
+
+    /**
+     * 静止心跳：系统不给点时，按周期补一个「原地不动」的点。
+     *
+     * ── 为什么必须有它 ─────────────────────────────────────────────────
+     *
+     * 定位请求用了 `minDistance = 10m`（滤 GPS 抖动，见 [MIN_DISTANCE_M]）。
+     * 代价是：**站着不动 → 位移不足 10m → 系统一次回调都不给**。
+     *
+     * 而「停留」的定义恰恰是「待着不动」——于是出现一个死结：
+     *   越该判定为停留的时段，越是一个点都没有。
+     *   轨迹页整天显示「暂无停留记录」，统计里停留点永远是 0。
+     *
+     * 心跳在每个周期检查一次：距上次**真实**回调是否已经超过一个周期。
+     * 超过 → 说明人没在动（或系统不给点了），补一个当前位置的点。
+     * 没超过 → 人在动，回调正常，不补（补了是重复点，会虚增里程）。
+     *
+     * ── 周期取值的取舍 ────────────────────────────────────────────────
+     *
+     * 用 [STAY_HEARTBEAT_MS] = 2 分钟，而不是直接用用户的采集间隔：
+     *   · 停留判定要求「同一位置连续跨度 ≥ STAY_MIN_MS(10 分钟)」，
+     *     2 分钟一个点能稳定覆盖住，且不会把一次停留切成碎段。
+     *   · 静止时 GPS 不工作、只是复用上一次坐标，耗电可忽略。
+     *   · 一天静止 12 小时 ≈ 360 个点，相对移动时本就有的点数不算多。
+     */
+    private fun startStayHeartbeat() {
+        heartbeatJob?.cancel()
+        heartbeatJob = scope.launch {
+            while (true) {
+                delay(STAY_HEARTBEAT_MS)
+                runCatching { heartbeatOnce() }
+                    .onFailure { Log.w(TAG, "stay heartbeat failed, skip this round", it) }
+            }
+        }
+    }
+
+    /** 心跳单轮：只在「真实回调已经停了」才补点。 */
+    private suspend fun heartbeatOnce() {
+        val now = System.currentTimeMillis()
+        val loc = lastKnown ?: return
+
+        // 人在动：真实回调还在正常来，不要补重复点。
+        //
+        // 留一点余量（周期的四分之一）：真实回调本身有秒级抖动，
+        // 卡得太死会在「刚好一个周期」时误判成静止，多补一个点。
+        if (lastFixAt != 0L && now - lastFixAt < STAY_HEARTBEAT_MS - STAY_HEARTBEAT_MS / 4) return
+
+        // 复用最近坐标，但把时间戳换成「现在」——
+        // 否则补进去的点还带着旧时间，落库后排序错乱，
+        // 停留段的时间跨度也算不出来。
+        //
+        // 只改时间，不改坐标：静止时位置本来就没变，
+        // 不主动唤醒 GPS 去取新点（见 [lastKnown] 注释）。
+        val point = Location(loc).apply { time = now }
+        repository.recordPoint(point)
     }
 
     /**
@@ -277,6 +370,12 @@ class TrackService : Service() {
         }.maxByOrNull { it.time } ?: return
 
         if (now - freshest.time > LAST_KNOWN_MAX_AGE_MS) return
+
+        // 记下来给静止心跳用：刚启动、还没来真实回调时，
+        // 心跳至少有个位置可补（否则这一段还是空的）。
+        lastKnown = freshest
+        // ⚠️ 这里**不**更新 lastFixAt：种子来自系统缓存，不是新鲜回调。
+        //    更新了会让心跳误以为「刚收到点」，把该补的时段跳过去。
 
         scope.launch {
             runCatching { repository.recordPoint(freshest) }
@@ -430,6 +529,9 @@ class TrackService : Service() {
         updatesRequested = false
         unregisterEventReceiver()
         tickerJob?.cancel()
+        // 心跳也要停，否则服务重建后会叠加出两条心跳，
+        // 静止时段被双倍补点（里程与停留时长同时虚高）。
+        heartbeatJob?.cancel()
         scope.cancel()
         // 定位回调所在的后台线程必须退出，否则每次服务重建都漏一个线程
         runCatching { locationHandler.quitSafely() }
@@ -484,6 +586,18 @@ class TrackService : Service() {
          * 10m 能滤掉绝大多数抖动，又不至于卡住步行。
          */
         private const val MIN_DISTANCE_M = 10f
+
+        /**
+         * 静止心跳的周期（毫秒）。
+         *
+         * 见 [startStayHeartbeat] 的完整说明。核心取舍：
+         *   · 要显著小于停留段的最短时长（10 分钟），否则一次停留
+         *     中间只有一个点、跨度凑不满，还是判不出来；
+         *   · 又不能太密 —— 静止时每个点都要写一次库，
+         *     1 分钟一签会让不必写的点数翻倍。
+         * 2 分钟是「够密以支撑判定、又不至于冗余」的位置。
+         */
+        private const val STAY_HEARTBEAT_MS = 2 * 60_000L
 
         /**
          * 服务是否正在运行。

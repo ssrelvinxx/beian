@@ -830,7 +830,14 @@ class TrackRepository(private val context: Context) {
 
     /**
      * 按天统计停留点 / 停留时长，供轨迹页展示。
-     * 停留判定：两点间隔 > 5 分钟且距离 < 200 米，视为同一停留段。
+     *
+     * 判定：把点位按时间顺序扫一遍，**累积位移超过 [STAY_RADIUS_M] 就断段**，
+     * 或者相邻两点间隔超过 [STAY_GAP_MS]（说明中间没采到点，不能算作
+     * 连续停留）也断段。跨度达到 [STAY_MIN_MS] 的段才算一段停留。
+     *
+     * ⚠️ 这个函数依赖「静止时也有点位」——由 [TrackService.startStayHeartbeat]
+     *    的静止心跳保证。没有心跳时，静止时段一个点都没有，
+     *    这里连段都凑不出来，结果为 0（详见该函数的说明）。
      */
     suspend fun staysOfDay(sourceId: String, day: String): List<Stay> {
         val points = pointDao.getByDay(sourceId, day)
@@ -858,7 +865,17 @@ class TrackRepository(private val context: Context) {
         for (i in 1 until points.size) {
             val p = points[i]
             val result = FloatArray(1)
-            Location.distanceBetween(segLast.latitude, segLast.longitude, p.latitude, p.longitude, result)
+            // ⚠️ 距离要跟**段落起点**比，不能跟「上一个点」比。
+            //
+            // 跟上一个点比时，判定实际变成了「单步位移 < 200m 就算停留」。
+            // 而步行速度约 1.4m/s，采集间隔 2 分钟 → 一步约 168m，
+            // **小于 200m**，于是走多远都不断段：走半小时也会被
+            // 算成一段「停留半小时」。这是方向性错误 ——
+            // 判的应该是「有没有离开起点」，不是「这一步迈了多大」。
+            //
+            // 跟段落起点比之后，位移是累积的：走出 200m 就断段，
+            // 真实停留（心跳补的点与起点同坐标）则永远不超限。
+            Location.distanceBetween(segStart.latitude, segStart.longitude, p.latitude, p.longitude, result)
             val gap = p.timestamp - segLast.timestamp
             val far = result[0] > STAY_RADIUS_M
 
