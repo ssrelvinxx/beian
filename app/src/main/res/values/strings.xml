@@ -203,6 +203,9 @@ App usage and device stats are collected on a fixed cycle, independent of this s
     <string name="report_perm_go_settings">Open settings</string>
     <string name="report_app_usage_more">Show %1$d more</string>
     <string name="report_app_usage_less">Show less</string>
+    <string name="report_day_count">%1$d events</string>
+    <string name="report_day_expand">Expand this day</string>
+    <string name="report_day_collapse">Collapse this day</string>
 
     <string name="crash_title">Crash log</string>
     <string name="crash_desc">Records the scene automatically when the app exits abnormally. Check and share it if you hit a crash.</string>

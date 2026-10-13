@@ -202,6 +202,9 @@ App 使用统计与设备状态按固定周期采集，不受这里影响。</st
     <string name="report_perm_go_settings">去设置</string>
     <string name="report_app_usage_more">展开其余 %1$d 个</string>
     <string name="report_app_usage_less">收起</string>
+    <string name="report_day_count">%1$d 条</string>
+    <string name="report_day_expand">展开这一天</string>
+    <string name="report_day_collapse">收起这一天</string>
 
     <string name="crash_title">崩溃日志</string>
     <string name="crash_desc">App 异常退出时自动记录现场。遇到闪退可以在这里查看并分享。</string>
